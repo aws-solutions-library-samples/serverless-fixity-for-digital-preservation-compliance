@@ -1,0 +1,458 @@
+# Serverless Fixity for Digital Preservation Compliance Solution
+#
+# template for serverless-fixity-for-digital-preservation-compliance
+# **DO NOT DELETE**
+#
+# author: aws-solutions-builder@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0081) Serverless Fixity for Digital Preservation Compliance solution.
+
+#
+# Mappings to store static value of the solution
+#
+Mappings:
+    Solution:
+        Project:
+            Id: SO0081
+            Version: "%VERSION%"
+        Template:
+            KeyPrefix: "%KEYPREFIX%"
+            S3Bucket: "%BUCKET%"
+        Package:
+            CustomResourceX: "%PKG_CUSTOM_RESOURCES%"
+        SNS:
+            DisplayName: Fixity
+        APIGateway:
+            StageName: demo
+
+Parameters:
+    # SNS parameter
+    Email:
+        Type: String
+        Description: subscribe to receive notification from the solution
+        AllowedPattern: '[^\s@]+@[^\s@]+\.[^\s@]+'
+
+    # API Gateway parameter
+    AllowOrigins:
+        Type: String
+        Description: "limit access to specified origin"
+        Default: "*"
+
+    # Solution anonymous metric
+    AnonymousUsage:
+        Type: String
+        Description: send anonymous usage data
+        Default: "Yes"
+        AllowedValues:
+          - "No"
+          - "Yes"
+
+Metadata:
+    AWS::CloudFormation::Interface:
+        ParameterGroups:
+            -
+                Label:
+                    default: "SNS Configuration"
+                Parameters:
+                    - Email
+            -
+                Label:
+                    default: "CORS Configuration"
+                Parameters:
+                    - AllowOrigins
+            -
+                Label:
+                    default: "Help us to improve"
+                Parameters:
+                    - AnonymousUsage
+
+        ParameterLabels:
+            Email:
+                default: "Email address"
+            AllowOrigins:
+                default: "Access-Control-Allow-Origin"
+            AnonymousUsage:
+                default: "Anonymous Usage"
+
+Conditions:
+    bEmail: !Not [
+        !Equals [
+            !Ref Email,
+            ""
+        ]
+    ]
+
+Resources:
+    #####################################################################################
+    #
+    # Custom Resource - helper function to create custom resource
+    #
+    #####################################################################################
+    CustomResourceExecutionRole:
+        Type: AWS::IAM::Role
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W11
+                        reason: "This wildcard is present as the custom resource lambda needs to be able to access contents within the bucket!"
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: "Allow"
+                        Action:
+                            - "sts:AssumeRole"
+                        Principal:
+                            Service:
+                                - "lambda.amazonaws.com"
+            Path: /
+            Policies:
+                -
+                    PolicyName: !Sub [
+                        "${x0}-${AWS::StackName}-custom-resources", {
+                            x0: !FindInMap [
+                                "Solution",
+                                "Project",
+                                "Id"
+                            ]
+                        }
+                    ]
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                        ## S3
+                        -
+                            Effect: "Allow"
+                            Action:
+                                - "s3:DeleteObject"
+                                - "s3:GetAccelerateConfiguration"
+                                - "s3:GetBucketCORS"
+                                - "s3:GetBucketNotification"
+                                - "s3:GetBucketPolicy"
+                                - "s3:GetBucketTagging"
+                                - "s3:GetEncryptionConfiguration"
+                                - "s3:GetLifecycleConfiguration"                                
+                                - "s3:GetObject"
+                                - "s3:GetObjectAcl"
+                                - "s3:GetObjectTagging"
+                                - "s3:ListBucket"
+                                - "s3:PutAccelerateConfiguration"
+                                - "s3:PutBucketCORS"
+                                - "s3:PutBucketNotification"
+                                - "s3:PutBucketPolicy"
+                                - "s3:PutBucketTagging"
+                                - "s3:PutEncryptionConfiguration"
+                                - "s3:PutLifecycleConfiguration"
+                                - "s3:PutObject"
+                                - "s3:PutObjectAcl"
+                                - "s3:PutObjectTagging"
+                            # This wildcard is present because of circular dependency where
+                            # the buckets aren't known before this custom resource lambda function
+                            # is created.
+                            Resource:
+                                - !Join ["", ["arn:aws:s3:::", "*"]]
+                                - !Join ["", ["arn:aws:s3:::", "*/*"]]
+
+                        ## CloudWatch Logs
+                        -
+                            Effect: "Allow"
+                            Action:
+                                - "logs:CreateLogGroup"
+                                - "logs:CreateLogStream"
+                                - "logs:PutLogEvents"
+                            Resource:
+                                - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+
+                        ## SNS
+                        -
+                            Effect: "Allow"
+                            Action:
+                                - "sns:GetSubscriptionAttributes"
+                                - "sns:GetTopicAttributes"
+                                - "sns:ListSubscriptionsByTopic"
+                                - "sns:ListTopics"
+                                - "sns:SetSubscriptionAttributes"
+                                - "sns:SetTopicAttributes"
+                                - "sns:Subscribe"
+                                - "sns:Unsubscribe"
+                            # This wildcard is present because the SNS topic is not known
+                            # before this custom resource lambda function is created.
+                            Resource:
+                                - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*"
+
+    CustomResourceFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Description: !Sub [
+                "(${x0}) ${AWS::StackName} custom resources", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Runtime: nodejs10.x
+            MemorySize: 128
+            Timeout: 300
+            Handler: index.Run
+            Role: !GetAtt CustomResourceExecutionRole.Arn
+            Code:
+                S3Bucket: !Sub [
+                    "${x0}-${AWS::Region}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "S3Bucket"
+                        ]
+                    }
+                ]
+                S3Key: !Sub [
+                    "${x0}/${x1}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "KeyPrefix"
+                        ],
+                        x1: !FindInMap [
+                            "Solution",
+                            "Package",
+                            "CustomResourceX"
+                        ]
+                    }
+                ]
+
+    #####################################################################################
+    #
+    # Generate random solution UUID
+    #
+    #####################################################################################
+    CreateSolutionUuid:
+        Type: Custom::CreateSolutionUuid
+        Properties:
+            ServiceToken: !GetAtt CustomResourceFunction.Arn
+            FunctionName: CreateSolutionUuid
+
+    SendConfig:
+        DependsOn: ApiGatewayStack
+        Type: Custom::SendConfig
+        Properties:
+            ServiceToken: !GetAtt CustomResourceFunction.Arn
+            FunctionName: SendConfig
+            SolutionId: !FindInMap [
+                "Solution",
+                "Project",
+                "Id"
+            ]
+            Version: !FindInMap [
+                "Solution",
+                "Project",
+                "Version"
+            ]
+            MetricsUuid: !GetAtt CreateSolutionUuid.Uuid
+            AnonymousUsage: !Ref AnonymousUsage
+
+    #####################################################################################
+    #
+    # SNS Topic - subscribe to SNS topic to receive notification from the solution
+    #
+    #####################################################################################
+    SNSTopic:
+        Type: AWS::SNS::Topic
+        Properties:
+            TopicName: !Sub [
+                "${x0}-${AWS::StackName}-serverless-fixity", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            DisplayName: !FindInMap [
+                "Solution",
+                "SNS",
+                "DisplayName"
+            ]
+            KmsMasterKeyId: "alias/aws/sns"
+
+    SNSTopicPolicy:
+        Type: AWS::SNS::TopicPolicy
+        Properties:
+            Topics:
+                - !Ref SNSTopic
+            PolicyDocument:
+                Id: !Sub [
+                    "${x0}-${AWS::StackName}-sns-policy", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Project",
+                            "Id"
+                        ]
+                    }
+                ]
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Sid: "allow-lambda-publish"
+                        Effect: "Allow"
+                        Principal:
+                            Service: "lambda.amazonaws.com"
+                        Action: "sns:Publish"
+                        Resource: !Ref SNSTopic
+
+    EmailSubscribeFunction:
+        Condition: bEmail
+        DependsOn: ApiGatewayStack
+        Type: Custom::EmailSubscribe
+        Properties:
+            ServiceToken: !GetAtt CustomResourceFunction.Arn
+            FunctionName: EmailSubscribe
+            EmailList: !Ref Email
+            TopicArn: !Ref SNSTopic
+
+    #####################################################################################
+    #
+    # State Machine stack - state machine to restore, compute, and validate checksum
+    #
+    #####################################################################################
+    StateMachinesStack:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub [
+                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/serverless-fixity-for-digital-preservation-compliance-state-machine-stack.template", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Template",
+                        "S3Bucket"
+                    ],
+                    x1: !FindInMap [
+                        "Solution",
+                        "Template",
+                        "KeyPrefix"
+                    ]
+                }
+            ]
+            Parameters:
+                S3Bucket: !Sub [
+                    "${x0}-${AWS::Region}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "S3Bucket"
+                        ]
+                    }
+                ]
+                KeyPrefix: !FindInMap [
+                    "Solution",
+                    "Template",
+                    "KeyPrefix"
+                ]
+                SolutionId: !FindInMap [
+                    "Solution",
+                    "Project",
+                    "Id"
+                ]
+                RootStackName: !Ref "AWS::StackName"
+                MetricsUuid: !GetAtt CreateSolutionUuid.Uuid
+                AnonymousUsage: !Ref AnonymousUsage
+                SNSTopic: !GetAtt SNSTopic.TopicName
+
+    #####################################################################################
+    #
+    # API Gateway stack - create endpoint to start/stop serverless checksum state machine
+    #
+    #####################################################################################
+    ApiGatewayStack:
+        Type: AWS::CloudFormation::Stack
+        Properties:
+            TemplateURL: !Sub [
+                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/serverless-fixity-for-digital-preservation-compliance-api-stack.template", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Template",
+                        "S3Bucket"
+                    ],
+                    x1: !FindInMap [
+                        "Solution",
+                        "Template",
+                        "KeyPrefix"
+                    ]
+                }
+            ]
+            Parameters:
+                S3Bucket: !Sub [
+                    "${x0}-${AWS::Region}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "S3Bucket"
+                        ]
+                    }
+                ]
+                KeyPrefix: !FindInMap [
+                    "Solution",
+                    "Template",
+                    "KeyPrefix"
+                ]
+                SolutionId: !FindInMap [
+                    "Solution",
+                    "Project",
+                    "Id"
+                ]
+                RootStackName: !Ref "AWS::StackName"
+                ApiGatewayEndpointName: !Sub [
+                    "${x0}-${AWS::StackName}-api", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Project",
+                            "Id"
+                        ]
+                    }
+                ]
+                StageName: !FindInMap [
+                    "Solution",
+                    "APIGateway",
+                    "StageName"
+                ]
+                StateMachine: !GetAtt StateMachinesStack.Outputs.StateMachineName
+                AllowOrigins: !Ref AllowOrigins
+
+Outputs:
+    ## Custom Resource related
+    CustomResourceExecutionRoleArn:
+        Value: !GetAtt CustomResourceExecutionRole.Arn
+        Description: Role Arn (Custom Resource)
+    CustomResourceFunctionArn:
+        Value: !GetAtt CustomResourceFunction.Arn
+        Description: Lambda Arn (Custom Resource)
+
+    ## SNS related
+    SNSTopicArn:
+        Value: !Ref SNSTopic
+        Description: Topic Arn (SNS)
+
+    ## State machine related
+    StateMachineName:
+        Value: !GetAtt StateMachinesStack.Outputs.StateMachineName
+        Description: State Machine Name
+    StateMachineServiceRoleArn:
+        Value: !GetAtt StateMachinesStack.Outputs.ServiceRoleArn
+        Description: Role Arn (State Machine Service)
+    StateMachineLambdaList:
+        Value: !GetAtt StateMachinesStack.Outputs.LambdaFunctionList
+        Description: List of Lambda Functions (State Machine)
+    StateMachineLambdaRoleList:
+        Value: !GetAtt StateMachinesStack.Outputs.LambdaRoleList
+        Description: List of Lambda Roles (State Machine Lambda)
+
+    ## API Gateway related
+    ApiId:
+        Value: !GetAtt ApiGatewayStack.Outputs.ApiId
+        Description: API Id
+    ApiEndpoint:
+        Value: !GetAtt ApiGatewayStack.Outputs.Endpoint
+        Description: API Endpoint

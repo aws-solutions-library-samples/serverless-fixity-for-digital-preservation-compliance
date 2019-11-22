@@ -1,0 +1,23 @@
+{
+  "name": "serverless-fixity-for-digital-preservation-compliance",
+  "version": "1.0.0",
+  "description": "Serverless Fixity for Digital Preservation Compliance solution, support MD5 and SHA1 algorithms",
+  "main": "index.js",
+  "private": true,
+  "dependencies": {
+    "rusha": "^0.8.13",
+    "spark-md5": "^3.0.0"
+  },
+  "scripts": {
+    "pretest": "npm install",
+    "test": "ENV_QUIET=1 mocha --timeout 120000 ./*.spec.js",
+    "build:clean": "rm -rf dist && mkdir -p dist",
+    "build:copy": "cp -rv index.js package.json lib dist/",
+    "build:install": "cd dist && npm install --production",
+    "build": "npm-run-all -s build:clean build:copy build:install",
+    "zip": "cd dist && zip -rq"
+  },
+  "author": "aws-mediaent-solutions",
+  "license": "MIT-0",
+  "devDependencies": {}
+}

@@ -1,0 +1,388 @@
+# Serverless Fixity for Digital Preservation Solution
+#
+# template for serverless-fixity-for-digital-preservation-compliance-api-stack
+# **DO NOT DELETE**
+#
+# author: aws-solutions-builder@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0081-api) Serverless Fixity for Digital Preservation. Create API Gateway resource to start fixity process.
+
+Mappings:
+    Solution:
+        Package:
+            ServerlessFixity: "%PKG_CHECKSUM%"
+        APIGateway:
+            Path: fixity
+    Function:
+        Handler:
+            OnRequest: index.OnRequest
+    UserDefined:
+        # The solution creates a CloudWatch Log IAM role automatically to allow API Gateway to log
+        # endpoint access. If you already configured API Gateway CloudWatch logs, set
+        # 'CreateCloudWatchRole' to 'false'. Otherwise, the solution overwrites your existing
+        # settings. For details why a IAM role is needed, see
+        # https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-cloudwatch-logs/
+        APIGateway:
+            CreateCloudWatchRole: true
+
+Parameters:
+    SolutionId:
+        Type: String
+        Description: "part of the resource naming"
+    RootStackName:
+        Type: String
+        Description: "part of the resource naming"
+    S3Bucket:
+        Type: String
+        Description: solution bucket
+        AllowedPattern: "[a-zA-Z][a-zA-Z0-9-_]*"
+    KeyPrefix:
+        Type: String
+        Description: solution key prefix
+    ApiGatewayEndpointName:
+        Type: String
+        Description: "API Gateway Name"
+    StageName:
+        Type: String
+        Description: "Leave it as is"
+        Default: demo
+    StateMachine:
+        Type: String
+        Description: "created by parent stack"
+    AllowOrigins:
+        Type: String
+        Description: "limit access to specified origin"
+        Default: "*"
+
+Metadata:
+    AWS::CloudFormation::Interface:
+        ParameterGroups:
+            -
+                Label:
+                    default: Solution Configuration
+                Parameters:
+                    - SolutionId
+                    - RootStackName
+                    - S3Bucket
+                    - KeyPrefix
+            -
+                Label:
+                    default: Created by other stacks
+                Parameters:
+                    - StateMachine
+            -
+                Label:
+                    default: API Gateway Configuration
+                Parameters:
+                    - ApiGatewayEndpointName
+                    - StageName
+                    - AllowOrigins
+        ParameterLabels:
+            SolutionId:
+                default: "Solution Id"
+            RootStackName:
+                default: "Top Stack Name"
+            S3Bucket:
+                default: "Solution Bucket"
+            KeyPrefix:
+                default: "Solution Key Prefix"
+            StateMachine:
+                default: "State Machine Name"
+            ApiGatewayEndpointName:
+                default: "API Gateway Name"
+            StageName:
+                default: "Deployment Stage"
+            AllowOrigins:
+                default: "Access-Control-Allow-Origin"
+
+Conditions:
+    bCreateCloudWatchRole: !Equals [
+        !FindInMap [
+            "UserDefined",
+            "APIGateway",
+            "CreateCloudWatchRole"
+        ],
+        true
+    ]
+
+Resources:
+    ExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                -
+                  Effect: "Allow"
+                  Principal:
+                    Service:
+                      - "lambda.amazonaws.com"
+                  Action:
+                    - "sts:AssumeRole"
+            Path: /
+            Policies:
+              -
+                PolicyName: !Sub ${SolutionId}-${RootStackName}-api
+                PolicyDocument:
+                    Version: "2012-10-17"
+                    Statement:
+                      # step functions - allow api to start, stop state machine
+                      -
+                        Effect: "Allow"
+                        Action:
+                            - "states:DescribeStateMachine"
+                            - "states:StartExecution"
+                        Resource:
+                            - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${StateMachine}"
+                      -
+                        Effect: "Allow"
+                        Action:
+                            - "states:DescribeExecution"
+                            - "states:StopExecution"
+                        Resource:
+                            - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:${StateMachine}:*"
+
+                      # logs
+                      -
+                        Effect: "Allow"
+                        Action:
+                            - "logs:CreateLogGroup"
+                            - "logs:CreateLogStream"
+                            - "logs:PutLogEvents"
+                        Resource:
+                            - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+
+    #
+    # (Metadata State machine) lambda function to monitor media analysis state machine
+    #
+    OnRequestFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            FunctionName: !Sub "${SolutionId}-${RootStackName}-OnRequest"
+            Description: !Sub "(${SolutionId}) Handle POST, OPTION requests"
+            Runtime: nodejs10.x
+            MemorySize: 128
+            Timeout: 300
+            Handler: !FindInMap [
+                "Function",
+                "Handler",
+                "OnRequest"
+            ]
+            Role: !GetAtt ExecutionRole.Arn
+            Code:
+                S3Bucket: !Ref S3Bucket
+                S3Key: !Sub [
+                    "${KeyPrefix}/${x0}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Package",
+                            "ServerlessFixity"
+                        ]
+                    }
+                ]
+            Environment:
+                Variables:
+                    ENV_STATE_MACHINE_NAME: !Ref StateMachine
+                    ENV_ALLOW_ORIGINS: !Ref AllowOrigins
+                    ENV_APIOP_FIXITY: !FindInMap [
+                        "Solution",
+                        "APIGateway",
+                        "Path"
+                    ]
+
+    ApiLogAccessRole:
+        Type: AWS::IAM::Role
+        Condition: bCreateCloudWatchRole
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: Allow
+                        Principal:
+                            Service: "apigateway.amazonaws.com"
+                        Action: "sts:AssumeRole"
+            Path: /
+            ManagedPolicyArns:
+                - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+
+    ApiAccount:
+        Type: AWS::ApiGateway::Account
+        Condition: bCreateCloudWatchRole
+        Properties:
+            CloudWatchRoleArn: !GetAtt ApiLogAccessRole.Arn
+
+    RestApi:
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+            Description: !Sub "(${SolutionId}) API endpoints to start and get state machines"
+            Body:
+                swagger: "2.0"
+                info:
+                    version: "2018-08-03T20:13:00Z"
+                    title: !Sub "${ApiGatewayEndpointName}"
+                basePath: !Sub "/${StageName}"
+                schemes:
+                    - "https"
+                paths:
+                    /{operation}:
+                        get:
+                            produces:
+                                - "application/json"
+                            parameters:
+                                -
+                                    name: "operation"
+                                    in: "path"
+                                    required: true
+                                    type: "string"
+                            response:
+                                "200":
+                                    description: "200 response"
+                                    schema:
+                                        $ref: "#/definitions/Empty"
+                            security:
+                                - sigv4: []
+                            x-amazon-apigateway-integration:
+                                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnRequestFunction.Arn}/invocations"
+                                responses:
+                                    default:
+                                        statusCode: "200"
+                                passthroughBehavior: "when_no_match"
+                                httpMethod: "POST"
+                                contentHandling: "CONVERT_TO_TEXT"
+                                type: "aws_proxy"
+                        post:
+                            produces:
+                                - "application/json"
+                            parameters:
+                                -
+                                    name: "operation"
+                                    in: "path"
+                                    required: true
+                                    type: "string"
+                            response:
+                                "200":
+                                    description: "200 response"
+                                    schema:
+                                        $ref: "#/definitions/Empty"
+                            security:
+                                - sigv4: []
+                            x-amazon-apigateway-integration:
+                                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnRequestFunction.Arn}/invocations"
+                                responses:
+                                    default:
+                                        statusCode: "200"
+                                passthroughBehavior: "when_no_match"
+                                httpMethod: "POST"
+                                contentHandling: "CONVERT_TO_TEXT"
+                                type: "aws_proxy"
+                        options:
+                            produces:
+                                - "application/json"
+                            parameters:
+                                -
+                                    name: "operation"
+                                    in: "path"
+                                    required: true
+                                    type: "string"
+                            response:
+                                "200":
+                                    description: "200 response"
+                                    schema:
+                                        $ref: "#/definitions/Empty"
+                                    headers:
+                                        Access-Control-Allow-Origin:
+                                            type: "string"
+                                        Access-Control-Allow-Methods:
+                                            type: "string"
+                                        Access-Control-Allow-Headers:
+                                            type: "string"
+                            x-amazon-apigateway-integration:
+                                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OnRequestFunction.Arn}/invocations"
+                                responses:
+                                    default:
+                                        statusCode: "200"
+                                passthroughBehavior: "when_no_match"
+                                httpMethod: "POST"
+                                contentHandling: "CONVERT_TO_TEXT"
+                                type: "aws_proxy"
+                securityDefinitions:
+                    sigv4:
+                        type: "apiKey"
+                        name: "Authorization"
+                        in: "header"
+                        x-amazon-apigateway-authtype: "awsSigv4"
+                definitions:
+                    Empty:
+                        type: "object"
+                        title: "Empty Schema"
+
+    Deployment:
+        Type: AWS::ApiGateway::Deployment
+        Properties:
+            Description: !Sub "(${SolutionId}) Created by ${RootStackName}"
+            RestApiId: !Ref RestApi
+            StageName: !Ref StageName
+            StageDescription:
+                Description: !If [
+                    bCreateCloudWatchRole,
+                    !Sub "$(${SolutionId}) ${ApiAccount} created by ${RootStackName}",
+                    !Sub "(${SolutionId}) Created by ${RootStackName}"
+                ]
+                LoggingLevel: ERROR
+                AccessLogSetting:
+                    DestinationArn: !Sub [
+                        "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/${x0}/api/${RootStackName}/${RestApi}/${StageName}", {
+                            x0: !FindInMap [
+                                "Solution",
+                                "APIGateway",
+                                "Path"
+                            ]
+                        }
+                    ]
+                    Format: "$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] \"$context.httpMethod $context.resourcePath $context.protocol\" $context.status $context.responseLength $context.requestId"
+                MethodSettings:
+                    -
+                        ResourcePath: /~1{operation}
+                        HttpMethod: GET
+                        DataTraceEnabled: true
+                        LoggingLevel: ERROR
+                    -
+                        ResourcePath: /~1{operation}
+                        HttpMethod: POST
+                        DataTraceEnabled: true
+                        LoggingLevel: INFO
+
+    FunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: !GetAtt OnRequestFunction.Arn
+            Principal: apigateway.amazonaws.com
+            SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/${StageName}/*/*"
+
+Outputs:
+    ApiId:
+        Value: !Ref RestApi
+        Description: API Id
+
+    Endpoint:
+        Value: !Sub [
+            "https://${RestApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/${x0}", {
+                x0: !FindInMap [
+                    "Solution",
+                    "APIGateway",
+                    "Path"
+                ]
+            }
+        ]
+        Description: API Endpoint
+
+    FunctionName:
+        Value: !Ref OnRequestFunction
+        Description: Function Name (OnRequestFunction)
+
+    FunctionArn:
+        Value: !GetAtt OnRequestFunction.Arn
+        Description: Function Arn (OnRequestFunction)

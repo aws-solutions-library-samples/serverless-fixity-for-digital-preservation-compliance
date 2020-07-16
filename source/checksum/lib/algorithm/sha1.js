@@ -63,6 +63,9 @@ class SHA1Lib extends BaseLib {
       }
 
       const [start, end] = this.calculateByteRange();
+      const range = (this.byteStart === 0 && this.fileSize === 0)
+        ? undefined
+        : `bytes=${start}-${end}`;
 
       const s3 = new AWS.S3({
         apiVersion: '2006-03-01',
@@ -72,7 +75,7 @@ class SHA1Lib extends BaseLib {
       const stream = s3.getObject({
         Bucket: this.bucket,
         Key: this.key,
-        Range: `bytes=${start}-${end}`,
+        Range: range,
         IfMatch: this.etag,
       }).createReadStream();
 

@@ -14,7 +14,7 @@ The solution is deployed using a CloudFormation template with AWS Lambda backed 
 --
 
 #### Step 1: Launch CloudFormation stack
-[![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?&templateURL=https%3A%2F%2Fs3.amazonaws.com%2Fsolutions-reference%2Fserverless-fixity-for-digital-preservation-compliance%2Flatest%2Fserverless-fixity-for-digital-preservation-compliance.template)
+[![Launch Stack](https://cdn.rawgit.com/buildkite/cloudformation-launch-stack-button-svg/master/launch-stack.svg)](https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/new?&templateURL=https%3A%2F%2Fmediaent-solution.s3.amazonaws.com%2Fserverless-fixity-for-digital-preservation-compliance%2F1.0.1%2Fserverless-fixity-for-digital-preservation-compliance.template)
 
 Click *Next* to continue
 

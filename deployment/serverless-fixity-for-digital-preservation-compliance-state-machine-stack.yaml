@@ -6,12 +6,12 @@
 # author: aws-solutions-builder@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: (SO0081-state-machine) Serverless Fixity for Digital Preservation. Create State machine resource to restore, compute, and validate checksum.
+Description: (%%SOLUTION_ID%%) Serverless Fixity for Digital Preservation. Create State machine resource to restore, compute, and validate checksum. Version %%VERSION%%
 
 Mappings:
     Solution:
         Package:
-            ServerlessFixity: "%PKG_CHECKSUM%"
+            ServerlessFixity: "%%PKG_CHECKSUM%%"
     Function:
         Handler:
             CheckRestoreStatus: index.CheckRestoreStatus
@@ -48,6 +48,9 @@ Parameters:
         Type: String
         Description: public status to SNS. Third Party should subscribe to receive the notification.
         AllowedPattern: "[a-zA-Z][a-zA-Z0-9-_]*"
+    CustomUserAgent:
+        Type: String
+        Description: Solution User Agent
 
 Metadata:
     AWS::CloudFormation::Interface:
@@ -134,11 +137,20 @@ Resources:
                                     - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
 
     CheckRestoreStatus:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
             FunctionName: !Sub "${SolutionId}-${RootStackName}-CheckRestoreStatus"
             Description: !Sub "(${SolutionId}) Check object restore status"
-            Runtime: nodejs10.x
+            Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 900
             Handler: !FindInMap [
@@ -164,6 +176,7 @@ Resources:
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
+                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
 
     #####################################################################################
     #
@@ -214,11 +227,20 @@ Resources:
                                     - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
 
     ComputeChecksum:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
             FunctionName: !Sub "${SolutionId}-${RootStackName}-ComputeChecksum"
             Description: !Sub "(${SolutionId}) Compute MD5 checksum incrementally"
-            Runtime: nodejs10.x
+            Runtime: nodejs14.x
             MemorySize: 2048
             Timeout: 900
             Handler: !FindInMap [
@@ -244,6 +266,7 @@ Resources:
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
+                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
 
     #####################################################################################
     #
@@ -306,11 +329,20 @@ Resources:
                                 - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
 
     FinalValidation:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
             FunctionName: !Sub "${SolutionId}-${RootStackName}-FinalValidation"
             Description: !Sub "(${SolutionId}) Validate MD5 checksum against a known one on the S3 object"
-            Runtime: nodejs10.x
+            Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 300
             Handler: !FindInMap [
@@ -336,6 +368,7 @@ Resources:
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
+                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
 
     #####################################################################################
     #
@@ -387,11 +420,20 @@ Resources:
                                     - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
 
     OnChecksumError:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
             FunctionName: !Sub "${SolutionId}-${RootStackName}-OnChecksumError"
             Description: !Sub "(${SolutionId}) Manage checksum error from state machine. Send SNS notification"
-            Runtime: nodejs10.x
+            Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 300
             Handler: !FindInMap [
@@ -417,6 +459,7 @@ Resources:
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
+                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
 
     #####################################################################################
     #

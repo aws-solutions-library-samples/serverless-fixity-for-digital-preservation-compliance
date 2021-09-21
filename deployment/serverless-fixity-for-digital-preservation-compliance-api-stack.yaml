@@ -6,12 +6,12 @@
 # author: aws-solutions-builder@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: (SO0081-api) Serverless Fixity for Digital Preservation. Create API Gateway resource to start fixity process.
+Description: (%%SOLUTION_ID%%) Serverless Fixity for Digital Preservation. Create API Gateway resource to start fixity process. Version %%VERSION%%
 
 Mappings:
     Solution:
         Package:
-            ServerlessFixity: "%PKG_CHECKSUM%"
+            ServerlessFixity: "%%PKG_CHECKSUM%%"
         APIGateway:
             Path: fixity
     Function:
@@ -54,6 +54,9 @@ Parameters:
         Type: String
         Description: "limit access to specified origin"
         Default: "*"
+    CustomUserAgent:
+        Type: String
+        Description: Solution User Agent
 
 Metadata:
     AWS::CloudFormation::Interface:
@@ -157,11 +160,20 @@ Resources:
     # (Metadata State machine) lambda function to monitor media analysis state machine
     #
     OnRequestFunction:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
             FunctionName: !Sub "${SolutionId}-${RootStackName}-OnRequest"
             Description: !Sub "(${SolutionId}) Handle POST, OPTION requests"
-            Runtime: nodejs10.x
+            Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 300
             Handler: !FindInMap [
@@ -190,6 +202,7 @@ Resources:
                         "APIGateway",
                         "Path"
                     ]
+                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
 
     ApiLogAccessRole:
         Type: AWS::IAM::Role
@@ -319,6 +332,12 @@ Resources:
                         title: "Empty Schema"
 
     Deployment:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W68
+                        reason: Supress UsagePlan requirement
         Type: AWS::ApiGateway::Deployment
         Properties:
             Description: !Sub "(${SolutionId}) Created by ${RootStackName}"

@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: MIT-0
  */
 
@@ -47,6 +47,7 @@ class S3Restore extends BaseStateData {
     this.$instance = new AWS.S3({
       apiVersion: '2006-03-01',
       signatureVersion: 'v4',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
   }
 

@@ -34,7 +34,7 @@ where
 
 ######################################################################
 #
-# BUCKET must be defined through commandline option
+# BUCKET_NAME must be defined through commandline option
 #
 # --bucket BUCKET_BASENAME
 #
@@ -42,12 +42,12 @@ while [[ $# -gt 0 ]]; do
   key="$1"
   case $key in
       -b|--bucket)
-      BUCKET="$2"
+      BUCKET_NAME="$2"
       shift # past key
       shift # past value
       ;;
       -s|--solution)
-      SOLUTION="$2"
+      SOLUTION_NAME="$2"
       shift # past key
       shift # past value
       ;;
@@ -69,7 +69,7 @@ BUILD_DIST_DIR="$DEPLOY_DIR/regional-s3-assets"
 SOURCE_DIR="$DEPLOY_DIR/../source"
 TMP_DIR=$(mktemp -d)
 
-[ -z "$BUCKET" ] && \
+[ -z "$BUCKET_NAME" ] && \
   echo "error: missing --bucket parameter..." && \
   usage && \
   exit 1
@@ -82,11 +82,11 @@ TMP_DIR=$(mktemp -d)
   usage && \
   exit 1
 
-[ -z "$SOLUTION" ] && \
-  SOLUTION=$(grep_package_name "$SOURCE_DIR/checksum/package.json")
+[ -z "$SOLUTION_NAME" ] && \
+  SOLUTION_NAME="serverless-fixity-for-digital-preservation-compliance"
 
-[ -z "$SOLUTION" ] && \
-  echo "error: SOLUTION variable is not defined" && \
+[ -z "$SOLUTION_NAME" ] && \
+  echo "error: SOLUTION_NAME variable is not defined" && \
   usage && \
   exit 1
 
@@ -161,24 +161,27 @@ function build_cloudformation_templates() {
 
   pushd "$TEMPLATE_DIST_DIR"
   # solution name
-  echo "Updating %SOLUTION% param in cloudformation templates..."
-  sed -i'.bak' -e "s|%SOLUTION%|${SOLUTION}|g" *.yaml || exit 1
+  echo "Updating %SOLUTION_NAME% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%SOLUTION_NAME%|${SOLUTION_NAME}|g" *.yaml || exit 1
+  # solution id
+  echo "Updating %%SOLUTION_ID%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%SOLUTION_ID%%|${SOLUTION_ID}|g" *.yaml || exit 1
   # version
-  echo "Updating %VERSION% param in cloudformation templates..."
-  sed -i'.bak' -e "s|%VERSION%|${VERSION}|g" *.yaml || exit 1
+  echo "Updating %%VERSION%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%VERSION%%|${VERSION}|g" *.yaml || exit 1
   # deployment bucket name
-  echo "Updating %BUCKET% param in cloudformation templates..."
-  sed -i'.bak' -e "s|%BUCKET%|${BUCKET}|g" *.yaml || exit 1
+  echo "Updating %%BUCKET_NAME%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%BUCKET_NAME%%|${BUCKET_NAME}|g" *.yaml || exit 1
   # key prefix name
-  local keyprefix="${SOLUTION}/${VERSION}"
-  echo "Updating %KEYPREFIX% param in cloudformation templates..."
-  sed -i'.bak' -e "s|%KEYPREFIX%|${keyprefix}|g" *.yaml || exit 1
+  local keyprefix="${SOLUTION_NAME}/${VERSION}"
+  echo "Updating %%KEYPREFIX%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%KEYPREFIX%%|${keyprefix}|g" *.yaml || exit 1
   # package name
-  echo "Updating %PKG_CHECKSUM% param in cloudformation templates..."
-  sed -i'.bak' -e "s|%PKG_CHECKSUM%|${PKG_CHECKSUM}|g" *.yaml || exit 1
+  echo "Updating %%PKG_CHECKSUM%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%PKG_CHECKSUM%%|${PKG_CHECKSUM}|g" *.yaml || exit 1
   # custom resource name
-  echo "Updating %PKG_CUSTOM_RESOURCES% param in cloudformation templates..."
-  sed -i'.bak' -e "s|%PKG_CUSTOM_RESOURCES%|${PKG_CUSTOM_RESOURCES}|g" *.yaml || exit 1
+  echo "Updating %%PKG_CUSTOM_RESOURCES%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%PKG_CUSTOM_RESOURCES%%|${PKG_CUSTOM_RESOURCES}|g" *.yaml || exit 1
   # remove .bak
   runcmd rm -v *.bak
   # Rename all *.yaml to *.template
@@ -231,9 +234,9 @@ function build_custom_resources_package() {
 #
 function on_complete() {
   echo "------------------------------------------------------------------------------"
-  echo "S3 Packaging Complete. (${SOLUTION} ${VERSION})"
+  echo "S3 Packaging Complete. (${SOLUTION_NAME} ${VERSION})"
   echo "------------------------------------------------------------------------------"
-  echo "** SOLUTION=${SOLUTION} **"
+  echo "** SOLUTION_NAME=${SOLUTION_NAME} **"
   echo "** VERSION=${VERSION} **"
   echo "** PKG_CUSTOM_RESOURCES=${PKG_CUSTOM_RESOURCES} **"
   echo "** PKG_CHECKSUM=${PKG_CHECKSUM} **"

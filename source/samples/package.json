@@ -1,6 +1,6 @@
 {
   "name": "sample-code",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Serverless Fixity for Digital Preservation Compliance solution sample codes",
   "main": "index.js",
   "private": true,

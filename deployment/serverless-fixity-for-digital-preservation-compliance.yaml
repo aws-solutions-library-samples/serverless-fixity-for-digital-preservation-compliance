@@ -6,7 +6,7 @@
 # author: aws-solutions-builder@
 AWSTemplateFormatVersion: "2010-09-09"
 
-Description: (SO0081) Serverless Fixity for Digital Preservation Compliance solution.
+Description: (%%SOLUTION_ID%%) Serverless Fixity for Digital Preservation Compliance solution. Version %%VERSION%%
 
 #
 # Mappings to store static value of the solution
@@ -14,17 +14,21 @@ Description: (SO0081) Serverless Fixity for Digital Preservation Compliance solu
 Mappings:
     Solution:
         Project:
-            Id: SO0081
-            Version: "%VERSION%"
+            Id: "%%SOLUTION_ID%%"
+            Version: "%%VERSION%%"
+            CustomUserAgent: AWSSOLUTION/%%SOLUTION_ID%%/%%VERSION%%
         Template:
-            KeyPrefix: "%KEYPREFIX%"
-            S3Bucket: "%BUCKET%"
+            KeyPrefix: "%%KEYPREFIX%%"
+            S3Bucket: "%%BUCKET_NAME%%"
         Package:
-            CustomResourceX: "%PKG_CUSTOM_RESOURCES%"
+            CustomResourceX: "%%PKG_CUSTOM_RESOURCES%%"
         SNS:
             DisplayName: Fixity
         APIGateway:
             StageName: demo
+    Send:
+        AnonymousUsage:
+            Data: "Yes"
 
 Parameters:
     # SNS parameter
@@ -32,21 +36,11 @@ Parameters:
         Type: String
         Description: subscribe to receive notification from the solution
         AllowedPattern: '[^\s@]+@[^\s@]+\.[^\s@]+'
-
     # API Gateway parameter
     AllowOrigins:
         Type: String
         Description: "limit access to specified origin"
         Default: "*"
-
-    # Solution anonymous metric
-    AnonymousUsage:
-        Type: String
-        Description: send anonymous usage data
-        Default: "Yes"
-        AllowedValues:
-          - "No"
-          - "Yes"
 
 Metadata:
     AWS::CloudFormation::Interface:
@@ -61,19 +55,11 @@ Metadata:
                     default: "CORS Configuration"
                 Parameters:
                     - AllowOrigins
-            -
-                Label:
-                    default: "Help us to improve"
-                Parameters:
-                    - AnonymousUsage
-
         ParameterLabels:
             Email:
                 default: "Email address"
             AllowOrigins:
                 default: "Access-Control-Allow-Origin"
-            AnonymousUsage:
-                default: "Anonymous Usage"
 
 Conditions:
     bEmail: !Not [
@@ -184,6 +170,15 @@ Resources:
                                 - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*"
 
     CustomResourceFunction:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
             Description: !Sub [
@@ -195,7 +190,7 @@ Resources:
                     ]
                 }
             ]
-            Runtime: nodejs10.x
+            Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 300
             Handler: index.Run
@@ -253,7 +248,10 @@ Resources:
                 "Version"
             ]
             MetricsUuid: !GetAtt CreateSolutionUuid.Uuid
-            AnonymousUsage: !Ref AnonymousUsage
+            AnonymousUsage: !FindInMap
+                - Send
+                - AnonymousUsage
+                - Data
 
     #####################################################################################
     #
@@ -358,8 +356,15 @@ Resources:
                 ]
                 RootStackName: !Ref "AWS::StackName"
                 MetricsUuid: !GetAtt CreateSolutionUuid.Uuid
-                AnonymousUsage: !Ref AnonymousUsage
                 SNSTopic: !GetAtt SNSTopic.TopicName
+                CustomUserAgent: !FindInMap
+                    - Solution
+                    - Project
+                    - CustomUserAgent
+                AnonymousUsage: !FindInMap
+                    - Send
+                    - AnonymousUsage
+                    - Data
 
     #####################################################################################
     #
@@ -420,8 +425,18 @@ Resources:
                 ]
                 StateMachine: !GetAtt StateMachinesStack.Outputs.StateMachineName
                 AllowOrigins: !Ref AllowOrigins
+                CustomUserAgent: !FindInMap
+                    - Solution
+                    - Project
+                    - CustomUserAgent
 
 Outputs:
+    CustomUserAgent:
+        Value: !FindInMap
+            - Solution
+            - Project
+            - CustomUserAgent
+        Description: Custom User Agent
     ## Custom Resource related
     CustomResourceExecutionRoleArn:
         Value: !GetAtt CustomResourceExecutionRole.Arn

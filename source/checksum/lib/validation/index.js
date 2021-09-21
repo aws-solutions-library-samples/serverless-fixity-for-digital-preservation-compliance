@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: MIT-0
  */
 
@@ -126,6 +126,7 @@ class ChecksumValidation extends BaseStateData {
     const s3 = new AWS.S3({
       apiVersion: '2006-03-01',
       signatureVersion: 'v4',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
 
     const params = {
@@ -156,6 +157,7 @@ class ChecksumValidation extends BaseStateData {
     const s3 = new AWS.S3({
       apiVersion: '2006-03-01',
       signatureVersion: 'v4',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
 
     const response = await s3.getObjectTagging(params).promise();
@@ -229,6 +231,7 @@ class ChecksumValidation extends BaseStateData {
     const s3 = new AWS.S3({
       apiVersion: '2006-03-01',
       signatureVersion: 'v4',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
 
     const {
@@ -277,6 +280,7 @@ class ChecksumValidation extends BaseStateData {
     const s3 = new AWS.S3({
       apiVersion: '2006-03-01',
       signatureVersion: 'v4',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
 
     const {

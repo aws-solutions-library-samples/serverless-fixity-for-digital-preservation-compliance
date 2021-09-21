@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: MIT-0
  */
 
@@ -45,6 +45,7 @@ class MySNS {
 
       const sns = new AWS.SNS({
         apiVersion: '2010-03-31',
+        customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
       });
 
       await sns.publish(params).promise();

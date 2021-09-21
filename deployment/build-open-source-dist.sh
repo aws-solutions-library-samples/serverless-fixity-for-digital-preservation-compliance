@@ -40,7 +40,7 @@ while [[ $# -gt 0 ]]; do
   key="$1"
   case $key in
       -s|--solution)
-      SOLUTION="$2"
+      SOLUTION_NAME="$2"
       shift # past key
       shift # past value
       ;;
@@ -50,11 +50,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[ -z "${SOLUTION}" ] && \
-  SOLUTION=$(grep_package_name "../source/checksum/package.json")
+[ -z "${SOLUTION_NAME}" ] && \
+  SOLUTION_NAME="serverless-fixity-for-digital-preservation-compliance"
 
-[ -z "${SOLUTION}" ] && \
-  echo "error: SOLUTION variable is not defined" && \
+[ -z "${SOLUTION_NAME}" ] && \
+  echo "error: SOLUTION_NAME variable is not defined" && \
   usage && \
   exit 1
 
@@ -115,9 +115,9 @@ function copy_standard_documents() {
   echo "[Packing] Legal Documents"
   echo "------------------------------------------------------------------------------"
   pushd "$source_template_dir/.."
-  for file in "LICENSE.txt" "NOTICE.txt" "README.md" "CODE_OF_CONDUCT.md" "CONTRIBUTING.md" "CHANGELOG.md"; do
-    echo "cp $file $dist_dir"
-    cp $file $dist_dir
+  for file in "LICENSE.txt" "NOTICE.txt" "README.md" "CODE_OF_CONDUCT.md" "CONTRIBUTING.md" "CHANGELOG.md .github"; do
+    echo "cp -rv $file $dist_dir"
+    cp -rv $file "${dist_dir}/"
   done
   popd
 }
@@ -147,14 +147,14 @@ function create_github_zip() {
   echo "------------------------------------------------------------------------------"
   echo "cd $dist_dir"
   cd $dist_dir
-  echo "zip -q -r9 ../${SOLUTION}.zip *"
-  zip -q -r9 ../${SOLUTION}.zip *
+  echo "zip -q -r9 ../${SOLUTION_NAME}.zip * .github"
+  zip -q -r9 ../${SOLUTION_NAME}.zip * .github
   echo "Clean up open-source folder"
   echo "rm -rf *"
-  rm -rf *
-  echo "mv ../${SOLUTION}.zip ."
-  mv ../${SOLUTION}.zip .
-  echo "Completed building ${SOLUTION}.zip dist"
+  rm -rf * .github
+  echo "mv ../${SOLUTION_NAME}.zip ."
+  mv ../${SOLUTION_NAME}.zip .
+  echo "Completed building ${SOLUTION_NAME}.zip dist"
 }
 
 #

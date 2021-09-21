@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: MIT-0
  */
 
@@ -212,6 +212,7 @@ class ApiRequest {
 
     const step = new AWS.StepFunctions({
       apiVersion: '2016-11-23',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
 
     const response = await step.describeExecution({
@@ -327,6 +328,7 @@ class ApiRequest {
 
     const step = new AWS.StepFunctions({
       apiVersion: '2016-11-23',
+      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
     });
     process.env.ENV_QUIET || console.log(`startExecution.input = ${JSON.stringify(input, null, 2)}`);
 

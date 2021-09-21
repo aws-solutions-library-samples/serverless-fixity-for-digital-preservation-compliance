@@ -1,5 +1,5 @@
 /**
- * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  * SPDX-License-Identifier: MIT-0
  */
 
@@ -93,6 +93,7 @@ function popTaskHistory(event, lambda) {
 async function parseExecutionHistory(arn) {
   const step = new AWS.StepFunctions({
     apiVersion: '2016-11-23',
+    customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
   });
 
   let transitions = 0;
@@ -144,6 +145,7 @@ async function parseExecutionHistory(arn) {
 
   const lambda = new AWS.Lambda({
     apiVersion: '2015-03-31',
+    customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
   });
 
   resources = await Promise.all(resources.map(x =>

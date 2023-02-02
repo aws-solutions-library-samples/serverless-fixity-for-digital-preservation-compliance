@@ -3,11 +3,6 @@
  * SPDX-License-Identifier: MIT-0
  */
 
-/* eslint-disable no-console */
-/* eslint-disable global-require */
-/* eslint-disable no-unused-vars */
-/* eslint-disable arrow-body-style */
-
 /**
  * @function EmailSubscribe
  * @param {object} event

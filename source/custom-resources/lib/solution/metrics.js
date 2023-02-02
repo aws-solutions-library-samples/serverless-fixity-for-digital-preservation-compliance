@@ -6,10 +6,6 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable no-console */
-/* eslint-disable import/no-unresolved */
-/* eslint-disable import/no-extraneous-dependencies */
 const HTTPS = require('https');
 
 /**

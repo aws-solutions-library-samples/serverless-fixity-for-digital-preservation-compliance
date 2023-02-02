@@ -6,7 +6,10 @@
 /**
  * @author aws-mediaent-solutions
  */
-const SPARK = require('spark-md5');
+const {
+  Hash,
+  HashType,
+} = require('resumable-hash');
 
 const {
   ComputedChecksumExistError,
@@ -19,16 +22,16 @@ const {
 } = require('./base');
 
 /**
- * @class MD5Lib
- * @description MD5 checksum implementation
+ * @class SHA256Lib
+ * @description SHA1 checksum implementation
  */
-class MD5Lib extends BaseLib {
+class SHA256Lib extends BaseLib {
   constructor(params = {}) {
-    super('MD5Lib', params);
-    if (params.Algorithm && params.Algorithm !== 'md5') {
-      throw new RuntimeError(`Algorithm is set to ${params.Algorithm} but loading MD5Lib`);
+    super('SHA256Lib', params);
+    if ((params.Algorithm || '').toLowerCase() !== 'sha256') {
+      throw new RuntimeError(`Algorithm is set to ${params.Algorithm} but loading SHA256Lib`);
     }
-    this.algorithm = 'md5';
+    this.algorithm = 'sha256';
   }
 
   /**
@@ -43,10 +46,11 @@ class MD5Lib extends BaseLib {
     await this.initLib();
 
     const responseData = await new Promise((resolve, reject) => {
-      const spark = new SPARK.ArrayBuffer();
+      let initState;
       if (this.intermediateHash) {
-        spark.setState(this.intermediateHash);
+        initState = Buffer.from(this.intermediateHash, 'hex');
       }
+      let resumeableHash = new Hash(HashType.Sha256, initState);
 
       const [start, end] = this.calculateByteRange();
       const range = (this.byteStart === 0 && this.fileSize === 0)
@@ -60,12 +64,10 @@ class MD5Lib extends BaseLib {
         IfMatch: this.etag,
       }).createReadStream();
 
-      stream.on('error', e =>
-        reject(e));
-
-      stream.on('data', async (data) => {
-        this.bytesRead += data.length;
-        spark.append(data);
+      stream.on('data', (chunk) => {
+        console.log('stream.data', chunk.byteLength);
+        this.bytesRead += chunk.byteLength;
+        resumeableHash = resumeableHash.updateSync(chunk);
       });
 
       stream.on('end', async () => {
@@ -75,22 +77,27 @@ class MD5Lib extends BaseLib {
           reject(new MismatchFileSizeError(`byte processed (${byteProcessed}) larger than the actual file size (${this.fileSize})`));
           return;
         }
+
         if (byteProcessed === this.fileSize) {
-          this.computed = spark.end();
+          this.computed = resumeableHash.digestSync().toString('hex');
           /* signal base class to record the end time */
           this.setElapsed();
           this.status = 'COMPLETED';
         } else {
-          this.intermediateHash = spark.getState();
+          this.intermediateHash = resumeableHash.serialize().toString('hex');
         }
         resolve(this.responseData());
       });
-    });
 
+      stream.on('error', (e) => {
+        console.log('stream.error', e);
+        reject(e);
+      });
+    });
     return responseData;
   }
 }
 
 module.exports = {
-  MD5Lib,
+  SHA256Lib,
 };

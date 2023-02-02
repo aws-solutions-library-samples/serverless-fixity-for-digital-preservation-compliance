@@ -6,10 +6,7 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable import/no-unresolved */
-/* eslint-disable import/no-extraneous-dependencies */
-const AWS = require('aws-sdk');
+const S3Utils = require('../shared/s3Utils');
 
 const {
   mxUtils,
@@ -40,6 +37,9 @@ class BaseLib extends BaseStateData {
     this.$computed = params.Computed || undefined;
     this.$expected = params.Expected || undefined;
     this.$bytesRead = 0;
+    this.$vendorRole = params.VendorRole;
+    this.$vendorExternalId = params.VendorExternalId;
+    this.$s3 = undefined;
   }
 
   get algorithm() {
@@ -94,20 +94,35 @@ class BaseLib extends BaseStateData {
     return this.$expected;
   }
 
+  get vendorRole() {
+    return this.$vendorRole;
+  }
+
+  get vendorExternalId() {
+    return this.$vendorExternalId;
+  }
+
+  get s3() {
+    return this.$s3;
+  }
+
+  set s3(val) {
+    this.$s3 = val;
+  }
+
   async initLib() {
     this.bytesRead = 0;
     this.t0 = new Date();
 
-    const s3 = new AWS.S3({
-      apiVersion: '2006-03-01',
-      signatureVersion: 'v4',
-      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
-    });
+    this.s3 = await S3Utils.createAssumedRoleS3(
+      this.vendorRole,
+      this.vendorExternalId
+    );
 
     const {
       ContentLength,
       ETag,
-    } = await s3.headObject({
+    } = await this.s3.headObject({
       Bucket: this.bucket,
       Key: this.key,
     }).promise();

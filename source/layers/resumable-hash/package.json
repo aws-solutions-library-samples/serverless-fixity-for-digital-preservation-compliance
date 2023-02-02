@@ -1,0 +1,15 @@
+{
+  "name": "resumable-hash-lambda-layer",
+  "version": "1.0.0",
+  "description": "lambda layer of the resumable-hash library",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "private": true,
+  "author": "aws-mediaent-solutions",
+  "license": "MIT-0",
+  "dependencies": {
+    "resumable-hash": "^0.2.5"
+  }
+}

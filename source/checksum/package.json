@@ -1,6 +1,6 @@
 {
   "name": "serverless-fixity-for-digital-preservation-compliance",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Serverless Fixity for Digital Preservation Compliance solution, support MD5 and SHA1 algorithms",
   "main": "index.js",
   "private": true,
@@ -19,5 +19,7 @@
   },
   "author": "aws-mediaent-solutions",
   "license": "MIT-0",
-  "devDependencies": {}
+  "devDependencies": {
+    "aws-sdk": "^2.1237.0"
+  }
 }

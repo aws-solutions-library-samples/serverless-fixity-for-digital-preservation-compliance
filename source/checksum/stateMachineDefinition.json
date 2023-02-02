@@ -4,20 +4,24 @@
     "States": {
         "CheckRestoreStatus": {
             "Type": "Task",
-            "Resource": "${x0}",
+            "Resource": "${CheckRestoreStatus.Arn}",
             "Next": "RestoreCompleted?",
-            "Retry": [{
-                "ErrorEquals": [
-                    "States.ALL"
-                ],
-                "IntervalSeconds": 1,
-                "MaxAttempts": 4,
-                "BackoffRate": 1.2
-            }],
-            "Catch": [{
-                "ErrorEquals": [ "ChecksumError" ],
-                "Next": "ChecksumError"
-            }]
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "ForbiddenError"
+                    ],
+                    "MaxAttempts": 0
+                },
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "IntervalSeconds": 1,
+                    "MaxAttempts": 4,
+                    "BackoffRate": 1.2
+                }
+            ]
         },
         "RestoreCompleted?": {
             "Type": "Choice",
@@ -26,85 +30,51 @@
                     "Variable": "$.RestoreStatus",
                     "StringEquals": "COMPLETED",
                     "Next": "ComputeChecksum"
-                },
-                {
-                    "Variable": "$.RestoreRequest.Tier",
-                    "StringEquals": "Expedited",
-                    "Next": "Wait 4 mins"
-                },
-                {
-                    "And": [
-                        {
-                            "Variable": "$.StorageClass",
-                            "StringEquals": "DEEP_ARCHIVE"
-                        },
-                        {
-                            "Variable": "$.RestoreRequest.Tier",
-                            "StringEquals": "Bulk"
-                        }
-                    ],
-                    "Next": "Wait 12 hrs"
                 }
             ],
-            "Default": "Wait 4 hrs"
+            "Default": "Wait X seconds"
         },
-        "Wait 4 mins": {
+        "Wait X seconds": {
             "Type": "Wait",
-            "Seconds": 240,
-            "Next": "CheckRestoreStatus"
-        },
-        "Wait 4 hrs": {
-            "Type": "Wait",
-            "Seconds": 14400,
-            "Next": "CheckRestoreStatus"
-        },
-        "Wait 12 hrs": {
-            "Type": "Wait",
-            "Seconds": 43200,
+            "SecondsPath": "$.WaitInSeconds",
             "Next": "CheckRestoreStatus"
         },
         "ComputeChecksum": {
             "Type": "Task",
-            "Resource": "${x1}",
+            "Resource": "${ComputeChecksum.Arn}",
             "Next": "MoreData?",
-            "Retry": [{
-                "ErrorEquals": [
-                    "States.ALL"
-                ],
-                "IntervalSeconds": 1,
-                "MaxAttempts": 4,
-                "BackoffRate": 1.2
-            }],
-            "Catch": [{
-                "ErrorEquals": [ "ChecksumError" ],
-                "Next": "ChecksumError"
-            }]
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "ForbiddenError"
+                    ],
+                    "MaxAttempts": 0
+                },
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "IntervalSeconds": 1,
+                    "MaxAttempts": 4,
+                    "BackoffRate": 1.2
+                }
+            ]
         },
         "MoreData?": {
             "Type": "Choice",
-            "Choices": [{
-                "Variable": "$.Status",
-                "StringEquals": "COMPLETED",
-                "Next": "FinalValidation"
-            }],
+            "Choices": [
+                {
+                    "Variable": "$.Status",
+                    "StringEquals": "COMPLETED",
+                    "Next": "FinalValidation"
+                }
+            ],
             "Default": "ComputeChecksum"
         },
         "FinalValidation": {
             "Type": "Task",
-            "Resource": "${x2}",
-            "Catch": [{
-                "ErrorEquals": [ "ChecksumError" ],
-                "Next": "ChecksumError"
-            }],
+            "Resource": "${FinalValidation.Arn}",
             "End": true
-        },
-        "ChecksumError": {
-            "Type": "Task",
-            "Resource": "${x3}",
-            "Next": "Fail"
-        },
-        "Fail": {
-            "Type": "Fail"
         }
     }
 }

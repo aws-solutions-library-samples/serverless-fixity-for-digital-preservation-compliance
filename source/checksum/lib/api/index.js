@@ -6,11 +6,6 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable no-console */
-/* eslint-disable import/no-unresolved */
-/* eslint-disable import/no-extraneous-dependencies */
-/* eslint no-unused-expressions: ["error", { "allowShortCircuit": true, "allowTernary": true }] */
 const AWS = require('aws-sdk');
 
 const {
@@ -70,6 +65,7 @@ class ApiRequest {
       Algorithms: [
         'md5',
         'sha1',
+        'sha256',
       ],
     };
   }
@@ -262,6 +258,8 @@ class ApiRequest {
       // 'ChunkSize',
       // 'StoreChecksumOnTagging',
       // 'RestoreRequest',
+      // 'VendorRole',
+      // 'VendorExternalId',
     ].filter(x => input[x] === undefined);
     if (missing.length) {
       throw new InvalidArgumentError(`missing ${missing.join(', ')}`);
@@ -296,6 +294,12 @@ class ApiRequest {
             throw new InvalidArgumentError('invalid Expected parameter');
           }
           break;
+        /* SHA256 expects 32 bytes (64 hex characters) */
+        case 'sha256':
+          if (!input.Expected.match(/^[a-fA-F0-9]{64}$/)) {
+            throw new InvalidArgumentError('invalid Expected parameter');
+          }
+          break;
         /* unsupported algorithm */
         default:
           throw new InvalidArgumentError('invalid Algorithm parameter');
@@ -317,6 +321,19 @@ class ApiRequest {
       if (input.RestoreRequest.Tier
         && ApiRequest.Constants.S3.Retrieval.Tiers.indexOf(input.RestoreRequest.Tier) < 0) {
         throw new InvalidArgumentError('invalid RestoreRequest parameter');
+      }
+    }
+
+    /* validate VendorRole */
+    if (input.VendorRole) {
+      if (!input.VendorRole.match(/^arn:aws:iam::[0-9]{0,63}:role\/[A-Za-z0-9:_/+=,@.-]{0,1024}$/)) {
+        throw new InvalidArgumentError('invalid VendorRole parameter');
+      }
+    }
+    /* validate VendorExternalId (optional) */
+    if (input.VendorExternalId) {
+      if (!input.VendorExternalId.match(/^[A-Za-z0-9+=,.@:/-]{3,1224}$/)) {
+        throw new InvalidArgumentError('invalid VendorExternalId parameter');
       }
     }
 

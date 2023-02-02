@@ -12,6 +12,8 @@ Mappings:
     Solution:
         Package:
             ServerlessFixity: "%%PKG_CHECKSUM%%"
+        Layer:
+            ResumableHash: "%%LAYER_RESUMABLE_HASH%%"
     Function:
         Handler:
             CheckRestoreStatus: index.CheckRestoreStatus
@@ -40,10 +42,6 @@ Parameters:
     AnonymousUsage:
         Type: String
         Description: send ananymous usage data
-        Default: "No"
-        AllowedValues:
-          - "No"
-          - "Yes"
     SNSTopic:
         Type: String
         Description: public status to SNS. Third Party should subscribe to receive the notification.
@@ -51,43 +49,47 @@ Parameters:
     CustomUserAgent:
         Type: String
         Description: Solution User Agent
+    ContentBucketList:
+        Type: String
+        Description: ContentBucketList
+    # Cross account access
+    VendorAccountRoleList:
+        Type: String
+        Description: VendorAccountRoleList
+        AllowedPattern: (^$)|(arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9_+=.@/-]{3,64}){1}(,arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9_+=.@/-]{3,64}){0,}
 
-Metadata:
-    AWS::CloudFormation::Interface:
-        ParameterGroups:
-            -
-                Label:
-                    default: "General Configuration"
-                Parameters:
-                    - S3Bucket
-                    - KeyPrefix
-                    - SolutionId
-                    - RootStackName
-                    - MetricsUuid
-                    - AnonymousUsage
-            -
-                Label:
-                    default: "Created by parent stack"
-                Parameters:
-                    - SNSTopic
-
-        ParameterLabels:
-            S3Bucket:
-                default: "Solution Bucket"
-            KeyPrefix:
-                default: "Solution Key Prefix"
-            SolutionId:
-                default: "Solution ID"
-            RootStackName:
-                default: "Top Stack Name"
-            MetricsUuid:
-                default: "UUID"
-            AnonymousUsage:
-                default: "Anonymous usage"
-            SNSTopic:
-                default: "SNS Topic"
+Conditions:
+    bVendorAccountRoleList: !Not
+        - !Equals
+            - !Ref VendorAccountRoleList
+            - ""
 
 Resources:
+    ################################################################################
+    #
+    # Lambda Layers shared among lambda resources
+    # * ResumableHashLayer
+    #
+    ################################################################################
+    ResumableHashLayer:
+        Type: AWS::Lambda::LayerVersion
+        Properties:
+            LayerName: !Sub ${SolutionId}-${RootStackName}-resumable-hash-layer
+            CompatibleArchitectures:
+                - x86_64
+            CompatibleRuntimes:
+                - nodejs14.x
+            Content:
+                S3Bucket: !Ref S3Bucket
+                S3Key: !Sub
+                    - ${KeyPrefix}/${package}
+                    - package: !FindInMap
+                        - Solution
+                        - Layer
+                        - ResumableHash
+            Description: !Sub (${SolutionId}-${RootStackName}) resumable-hash layer
+            LicenseInfo: MIT-0
+
     #####################################################################################
     #
     # CheckRestoreStatus lambda (Serverless Fixity for Digital Preservation State machine)
@@ -100,41 +102,41 @@ Resources:
                 rules_to_suppress:
                     -
                         id: W11
-                        reason: "This wildcard is present as state machine lambda needs to be able to access contents across buckets!"
+                        reason: This wildcard is present as state machine lambda needs to be able to access contents across buckets!
         Properties:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
                     -
-                        Effect: "Allow"
-                        Action:
-                            - "sts:AssumeRole"
+                        Effect: Allow
+                        Action: sts:AssumeRole
                         Principal:
                             Service:
-                                - "lambda.amazonaws.com"
+                                - lambda.amazonaws.com
             Path: /
             Policies:
                 -
-                    PolicyName: !Sub "${SolutionId}-${RootStackName}-CheckRestoreStatus"
+                    PolicyName: !Sub ${SolutionId}-${RootStackName}-CheckRestoreStatus
                     PolicyDocument:
                         Version: "2012-10-17"
                         Statement:
                             ## S3
                             -
-                                Effect: "Allow"
+                                Effect: Allow
                                 Action:
-                                    - "s3:GetObject"
-                                    - "s3:RestoreObject"
-                                Resource: !Join ["", ["arn:aws:s3:::", "*/*"]]
+                                    - s3:GetObject
+                                    - s3:RestoreObject
+                                Resource: !Split
+                                    - ","
+                                    - !Ref ContentBucketList
                             ## CloudWatch Logs
                             -
-                                Effect: "Allow"
+                                Effect: Allow
                                 Action:
-                                    - "logs:CreateLogGroup"
-                                    - "logs:CreateLogStream"
-                                    - "logs:PutLogEvents"
-                                Resource:
-                                    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                                    - logs:CreateLogGroup
+                                    - logs:CreateLogStream
+                                    - logs:PutLogEvents
+                                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
 
     CheckRestoreStatus:
         Metadata:
@@ -148,31 +150,29 @@ Resources:
                         reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
-            FunctionName: !Sub "${SolutionId}-${RootStackName}-CheckRestoreStatus"
-            Description: !Sub "(${SolutionId}) Check object restore status"
+            FunctionName: !Sub ${SolutionId}-${RootStackName}-CheckRestoreStatus
+            Description: !Sub (${SolutionId}) Check object restore status
             Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 900
-            Handler: !FindInMap [
-                "Function",
-                "Handler",
-                "CheckRestoreStatus"
-            ]
+            Handler: !FindInMap
+                - Function
+                - Handler
+                - CheckRestoreStatus
             Role: !GetAtt CheckRestoreStatusRole.Arn
             Code:
                 S3Bucket: !Ref S3Bucket
-                S3Key: !Sub [
-                    "${KeyPrefix}/${x0}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Package",
-                            "ServerlessFixity"
-                        ]
-                    }
-                ]
+                S3Key: !Sub
+                    - ${KeyPrefix}/${package}
+                    - package: !FindInMap
+                        - Solution
+                        - Package
+                        - ServerlessFixity
+            Layers:
+                - !Ref ResumableHashLayer
             Environment:
                 Variables:
-                    ENV_SNS_TOPIC_ARN: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
+                    ENV_SNS_TOPIC_ARN: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
@@ -190,41 +190,39 @@ Resources:
                 rules_to_suppress:
                     -
                         id: W11
-                        reason: "This wildcard is present as state machine lambda needs to be able to access contents across buckets!"
+                        reason: This wildcard is present as state machine lambda needs to be able to access contents across buckets!
         Properties:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
                     -
-                        Effect: "Allow"
-                        Action:
-                            - "sts:AssumeRole"
+                        Effect: Allow
+                        Action: sts:AssumeRole
                         Principal:
                             Service:
-                                - "lambda.amazonaws.com"
+                                - lambda.amazonaws.com
             Path: /
             Policies:
                 -
-                    PolicyName: !Sub "${SolutionId}-${RootStackName}-ComputeChecksum"
+                    PolicyName: !Sub ${SolutionId}-${RootStackName}-ComputeChecksum
                     PolicyDocument:
                         Version: "2012-10-17"
                         Statement:
                             ## S3
                             -
-                                Effect: "Allow"
-                                Action:
-                                    - "s3:GetObject"
-                                Resource: !Join ["", ["arn:aws:s3:::", "*/*"]]
-
+                                Effect: Allow
+                                Action: s3:GetObject
+                                Resource: !Split
+                                    - ","
+                                    - !Ref ContentBucketList
                             ## CloudWatch Logs
                             -
-                                Effect: "Allow"
+                                Effect: Allow
                                 Action:
-                                    - "logs:CreateLogGroup"
-                                    - "logs:CreateLogStream"
-                                    - "logs:PutLogEvents"
-                                Resource:
-                                    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                                    - logs:CreateLogGroup
+                                    - logs:CreateLogStream
+                                    - logs:PutLogEvents
+                                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
 
     ComputeChecksum:
         Metadata:
@@ -238,31 +236,29 @@ Resources:
                         reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
-            FunctionName: !Sub "${SolutionId}-${RootStackName}-ComputeChecksum"
-            Description: !Sub "(${SolutionId}) Compute MD5 checksum incrementally"
+            FunctionName: !Sub ${SolutionId}-${RootStackName}-ComputeChecksum
+            Description: !Sub (${SolutionId}) Compute MD5 checksum incrementally
             Runtime: nodejs14.x
             MemorySize: 2048
             Timeout: 900
-            Handler: !FindInMap [
-                "Function",
-                "Handler",
-                "ComputeChecksum"
-            ]
+            Handler: !FindInMap
+                - Function
+                - Handler
+                - ComputeChecksum
             Role: !GetAtt ComputeChecksumRole.Arn
             Code:
                 S3Bucket: !Ref S3Bucket
-                S3Key: !Sub [
-                    "${KeyPrefix}/${x0}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Package",
-                            "ServerlessFixity"
-                        ]
-                    }
-                ]
+                S3Key: !Sub
+                    - ${KeyPrefix}/${package}
+                    - package: !FindInMap
+                        - Solution
+                        - Package
+                        - ServerlessFixity
+            Layers:
+                - !Ref ResumableHashLayer
             Environment:
                 Variables:
-                    ENV_SNS_TOPIC_ARN: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
+                    ENV_SNS_TOPIC_ARN: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
@@ -280,53 +276,49 @@ Resources:
                 rules_to_suppress:
                     -
                         id: W11
-                        reason: "This wildcard is present as state machine lambda needs to be able to access contents across buckets!"
+                        reason: This wildcard is present as state machine lambda needs to be able to access contents across buckets!
         Properties:
             AssumeRolePolicyDocument:
                 Version: "2012-10-17"
                 Statement:
                     -
-                        Effect: "Allow"
-                        Action:
-                            - "sts:AssumeRole"
+                        Effect: Allow
+                        Action: sts:AssumeRole
                         Principal:
                             Service:
-                                - "lambda.amazonaws.com"
+                                - lambda.amazonaws.com
             Path: /
             Policies:
                 -
-                    PolicyName: !Sub "${SolutionId}-${RootStackName}-FinalValidation"
+                    PolicyName: !Sub ${SolutionId}-${RootStackName}-FinalValidation
                     PolicyDocument:
                         Version: "2012-10-17"
                         Statement:
-                        ## S3
-                        -
-                            Effect: "Allow"
-                            Action:
-                                - "s3:GetObject"
-                                - "s3:GetObjectTagging"
-                                - "s3:GetObjectVersionTagging"
-                                - "s3:PutObjectTagging"
-                                - "s3:PutObjectVersionTagging"
-                            Resource: !Join ["", ["arn:aws:s3:::", "*/*"]]
-
-                        ## CloudWatch Logs
-                        -
-                            Effect: "Allow"
-                            Action:
-                                - "logs:CreateLogGroup"
-                                - "logs:CreateLogStream"
-                                - "logs:PutLogEvents"
-                            Resource:
-                                - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
-
-                        ## SNS
-                        -
-                            Effect: "Allow"
-                            Action:
-                                - "sns:Publish"
-                            Resource:
-                                - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
+                            ## S3
+                            -
+                                Effect: Allow
+                                Action:
+                                    - s3:GetObject
+                                    - s3:GetObjectTagging
+                                    - s3:GetObjectVersionTagging
+                                    - s3:PutObjectTagging
+                                    - s3:PutObjectVersionTagging
+                                Resource: !Split
+                                    - ","
+                                    - !Ref ContentBucketList
+                            ## CloudWatch Logs
+                            -
+                                Effect: Allow
+                                Action:
+                                    - logs:CreateLogGroup
+                                    - logs:CreateLogStream
+                                    - logs:PutLogEvents
+                                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+                            ## SNS
+                            -
+                                Effect: Allow
+                                Action: sns:Publish
+                                Resource: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}
 
     FinalValidation:
         Metadata:
@@ -340,122 +332,29 @@ Resources:
                         reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
-            FunctionName: !Sub "${SolutionId}-${RootStackName}-FinalValidation"
-            Description: !Sub "(${SolutionId}) Validate MD5 checksum against a known one on the S3 object"
+            FunctionName: !Sub ${SolutionId}-${RootStackName}-FinalValidation
+            Description: !Sub (${SolutionId}) Validate MD5 checksum against a known one on the S3 object
             Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 300
-            Handler: !FindInMap [
-                "Function",
-                "Handler",
-                "FinalValidation"
-            ]
+            Handler: !FindInMap
+                - Function
+                - Handler
+                - FinalValidation
             Role: !GetAtt FinalValidationRole.Arn
             Code:
                 S3Bucket: !Ref S3Bucket
-                S3Key: !Sub [
-                    "${KeyPrefix}/${x0}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Package",
-                            "ServerlessFixity"
-                        ]
-                    }
-                ]
+                S3Key: !Sub
+                    - ${KeyPrefix}/${package}
+                    - package: !FindInMap
+                        - Solution
+                        - Package
+                        - ServerlessFixity
+            Layers:
+                - !Ref ResumableHashLayer
             Environment:
                 Variables:
-                    ENV_SNS_TOPIC_ARN: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
-                    ENV_SOLUTION_ID: !Ref SolutionId
-                    ENV_METRICS_UUID: !Ref MetricsUuid
-                    ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
-                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
-
-    #####################################################################################
-    #
-    # OnChecksumError lambda (Serverless Fixity for Digital Preservation  State machine)
-    #
-    #####################################################################################
-    OnChecksumErrorRole:
-        Type: AWS::IAM::Role
-        Metadata:
-            cfn_nag:
-                rules_to_suppress:
-                    -
-                        id: W11
-                        reason: "This wildcard is present as state machine lambda needs to be able to access contents across buckets!"
-        Properties:
-            AssumeRolePolicyDocument:
-                Version: "2012-10-17"
-                Statement:
-                    -
-                        Effect: "Allow"
-                        Action:
-                            - "sts:AssumeRole"
-                        Principal:
-                            Service:
-                                - "lambda.amazonaws.com"
-            Path: /
-            Policies:
-                -
-                    PolicyName: !Sub "${SolutionId}-${RootStackName}-OnChecksumError"
-                    PolicyDocument:
-                        Version: "2012-10-17"
-                        Statement:
-                            ## CloudWatch Logs
-                            -
-                                Effect: "Allow"
-                                Action:
-                                    - "logs:CreateLogGroup"
-                                    - "logs:CreateLogStream"
-                                    - "logs:PutLogEvents"
-                                Resource:
-                                    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
-
-                            ## SNS
-                            -
-                                Effect: "Allow"
-                                Action:
-                                    - "sns:Publish"
-                                Resource:
-                                    - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
-
-    OnChecksumError:
-        Metadata:
-            cfn_nag:
-                rules_to_suppress:
-                    -
-                        id: W89
-                        reason: Not using VPC
-                    -
-                        id: W92
-                        reason: Not using ReservedConcurrentExecutions feature
-        Type: AWS::Lambda::Function
-        Properties:
-            FunctionName: !Sub "${SolutionId}-${RootStackName}-OnChecksumError"
-            Description: !Sub "(${SolutionId}) Manage checksum error from state machine. Send SNS notification"
-            Runtime: nodejs14.x
-            MemorySize: 128
-            Timeout: 300
-            Handler: !FindInMap [
-                "Function",
-                "Handler",
-                "OnChecksumError"
-            ]
-            Role: !GetAtt OnChecksumErrorRole.Arn
-            Code:
-                S3Bucket: !Ref S3Bucket
-                S3Key: !Sub [
-                    "${KeyPrefix}/${x0}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Package",
-                            "ServerlessFixity"
-                        ]
-                    }
-                ]
-            Environment:
-                Variables:
-                    ENV_SNS_TOPIC_ARN: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}"
+                    ENV_SNS_TOPIC_ARN: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}
                     ENV_SOLUTION_ID: !Ref SolutionId
                     ENV_METRICS_UUID: !Ref MetricsUuid
                     ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
@@ -473,199 +372,316 @@ Resources:
                 Version: "2012-10-17"
                 Statement:
                 -
-                    Effect: "Allow"
-                    Action:
-                        - "sts:AssumeRole"
+                    Effect: Allow
+                    Action: sts:AssumeRole
                     Principal:
                         Service:
-                            - !Sub "states.${AWS::Region}.amazonaws.com"
+                            - !Sub states.${AWS::Region}.amazonaws.com
             Path: /
             Policies:
                 -
-                    PolicyName: !Sub "${SolutionId}-${RootStackName}-statemachine-service-role"
+                    PolicyName: !Sub ${SolutionId}-${RootStackName}-statemachine-service-role
                     PolicyDocument:
                         Version: "2012-10-17"
                         Statement:
                             -
-                                Effect: "Allow"
-                                Action:
-                                    - "lambda:InvokeFunction"
+                                Effect: Allow
+                                Action: lambda:InvokeFunction
                                 Resource:
                                     - !GetAtt CheckRestoreStatus.Arn
                                     - !GetAtt ComputeChecksum.Arn
                                     - !GetAtt FinalValidation.Arn
-                                    - !GetAtt OnChecksumError.Arn
 
     ServerlessFixityStateMachine:
         Type: AWS::StepFunctions::StateMachine
         Properties:
-            StateMachineName: !Sub "${SolutionId}-${RootStackName}-serverless-fixity"
+            StateMachineName: !Sub ${SolutionId}-${RootStackName}-serverless-fixity
             RoleArn: !GetAtt StateMachineServiceRole.Arn
             DefinitionString:
-                !Sub
-                    - |-
-                        {
-                            "Comment": "Serverless Fixity for Preservation Compliance state machine to compute MD5 checksum incrementally",
-                            "StartAt": "CheckRestoreStatus",
-                            "States": {
-                                "CheckRestoreStatus": {
-                                    "Type": "Task",
-                                    "Resource": "${x0}",
-                                    "Next": "RestoreCompleted?",
-                                    "Retry": [{
+                !Sub |-
+                    {
+                        "Comment": "Serverless Fixity for Digital Preservation Compliance state mahince to compute MD5 checksum incrementally",
+                        "StartAt": "CheckRestoreStatus",
+                        "States": {
+                            "CheckRestoreStatus": {
+                                "Type": "Task",
+                                "Resource": "${CheckRestoreStatus.Arn}",
+                                "Next": "RestoreCompleted?",
+                                "Retry": [
+                                    {
+                                        "ErrorEquals": [
+                                            "ForbiddenError"
+                                        ],
+                                        "MaxAttempts": 0
+                                    },
+                                    {
                                         "ErrorEquals": [
                                             "States.ALL"
                                         ],
                                         "IntervalSeconds": 1,
                                         "MaxAttempts": 4,
                                         "BackoffRate": 1.2
-                                    }],
-                                    "Catch": [{
-                                        "ErrorEquals": [ "ChecksumError" ],
-                                        "Next": "ChecksumError"
-                                    }]
-                                },
-                                "RestoreCompleted?": {
-                                    "Type": "Choice",
-                                    "Choices": [
-                                        {
-                                            "Variable": "$.RestoreStatus",
-                                            "StringEquals": "COMPLETED",
-                                            "Next": "ComputeChecksum"
-                                        },
-                                        {
-                                            "Variable": "$.RestoreRequest.Tier",
-                                            "StringEquals": "Expedited",
-                                            "Next": "Wait 4 mins"
-                                        },
-                                        {
-                                            "And": [
-                                                {
-                                                    "Variable": "$.StorageClass",
-                                                    "StringEquals": "DEEP_ARCHIVE"
-                                                },
-                                                {
-                                                    "Variable": "$.RestoreRequest.Tier",
-                                                    "StringEquals": "Bulk"
-                                                }
-                                            ],
-                                            "Next": "Wait 12 hrs"
-                                        }
-                                    ],
-                                    "Default": "Wait 4 hrs"
-                                },
-                                "Wait 4 mins": {
-                                    "Type": "Wait",
-                                    "Seconds": 240,
-                                    "Next": "CheckRestoreStatus"
-                                },
-                                "Wait 4 hrs": {
-                                    "Type": "Wait",
-                                    "Seconds": 14400,
-                                    "Next": "CheckRestoreStatus"
-                                },
-                                "Wait 12 hrs": {
-                                    "Type": "Wait",
-                                    "Seconds": 43200,
-                                    "Next": "CheckRestoreStatus"
-                                },
-                                "ComputeChecksum": {
-                                    "Type": "Task",
-                                    "Resource": "${x1}",
-                                    "Next": "MoreData?",
-                                    "Retry": [{
+                                    }
+                                ]
+                            },
+                            "RestoreCompleted?": {
+                                "Type": "Choice",
+                                "Choices": [
+                                    {
+                                        "Variable": "$.RestoreStatus",
+                                        "StringEquals": "COMPLETED",
+                                        "Next": "ComputeChecksum"
+                                    }
+                                ],
+                                "Default": "Wait X seconds"
+                            },
+                            "Wait X seconds": {
+                                "Type": "Wait",
+                                "SecondsPath": "$.WaitInSeconds",
+                                "Next": "CheckRestoreStatus"
+                            },
+                            "ComputeChecksum": {
+                                "Type": "Task",
+                                "Resource": "${ComputeChecksum.Arn}",
+                                "Next": "MoreData?",
+                                "Retry": [
+                                    {
+                                        "ErrorEquals": [
+                                            "ForbiddenError"
+                                        ],
+                                        "MaxAttempts": 0
+                                    },
+                                    {
                                         "ErrorEquals": [
                                             "States.ALL"
                                         ],
                                         "IntervalSeconds": 1,
                                         "MaxAttempts": 4,
                                         "BackoffRate": 1.2
-                                    }],
-                                    "Catch": [{
-                                        "ErrorEquals": [ "ChecksumError" ],
-                                        "Next": "ChecksumError"
-                                    }]
-                                },
-                                "MoreData?": {
-                                    "Type": "Choice",
-                                    "Choices": [{
+                                    }
+                                ]
+                            },
+                            "MoreData?": {
+                                "Type": "Choice",
+                                "Choices": [
+                                    {
                                         "Variable": "$.Status",
                                         "StringEquals": "COMPLETED",
                                         "Next": "FinalValidation"
-                                    }],
-                                    "Default": "ComputeChecksum"
-                                },
-                                "FinalValidation": {
-                                    "Type": "Task",
-                                    "Resource": "${x2}",
-                                    "Catch": [{
-                                        "ErrorEquals": [ "ChecksumError" ],
-                                        "Next": "ChecksumError"
-                                    }],
-                                    "End": true
-                                },
-                                "ChecksumError": {
-                                    "Type": "Task",
-                                    "Resource": "${x3}",
-                                    "Next": "Fail"
-                                },
-                                "Fail": {
-                                    "Type": "Fail"
-                                }
+                                    }
+                                ],
+                                "Default": "ComputeChecksum"
+                            },
+                            "FinalValidation": {
+                                "Type": "Task",
+                                "Resource": "${FinalValidation.Arn}",
+                                "End": true
                             }
                         }
+                    }
 
+    #####################################################################################
+    #
+    # State Machine Error Handling
+    # * OnChecksumError lambda
+    # * EventBridge Event Rule
+    #
+    #####################################################################################
+    OnChecksumErrorRole:
+        Type: AWS::IAM::Role
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
                     -
-                        {
-                            x0: !GetAtt CheckRestoreStatus.Arn,
-                            x1: !GetAtt ComputeChecksum.Arn,
-                            x2: !GetAtt FinalValidation.Arn,
-                            x3: !GetAtt OnChecksumError.Arn
-                        }
+                        id: W11
+                        reason: This wildcard is present as state machine lambda needs to be able to access contents across buckets!
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: Allow
+                        Action: sts:AssumeRole
+                        Principal:
+                            Service:
+                                - lambda.amazonaws.com
+            Path: /
+            Policies:
+                -
+                    PolicyName: !Sub ${SolutionId}-${RootStackName}-OnChecksumError
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                            ## CloudWatch Logs
+                            -
+                                Effect: Allow
+                                Action:
+                                    - logs:CreateLogGroup
+                                    - logs:CreateLogStream
+                                    - logs:PutLogEvents
+                                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
+                            ## SNS
+                            -
+                                Effect: Allow
+                                Action: sns:Publish
+                                Resource:
+                                    - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}
+                            # Step Functions
+                            -
+                                Effect: Allow
+                                Action:
+                                    - states:DescribeExecution
+                                    - states:GetExecutionHistory
+                                Resource: !Sub arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:${ServerlessFixityStateMachine.Name}:*
+
+    OnChecksumError:
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W89
+                        reason: Not using VPC
+                    -
+                        id: W92
+                        reason: Not using ReservedConcurrentExecutions feature
+        Type: AWS::Lambda::Function
+        Properties:
+            FunctionName: !Sub ${SolutionId}-${RootStackName}-OnChecksumError
+            Description: !Sub (${SolutionId}) Manage checksum error from state machine. Send SNS notification
+            Runtime: nodejs14.x
+            MemorySize: 128
+            Timeout: 300
+            Handler: !FindInMap
+                - Function
+                - Handler
+                - OnChecksumError
+            Role: !GetAtt OnChecksumErrorRole.Arn
+            Code:
+                S3Bucket: !Ref S3Bucket
+                S3Key: !Sub
+                    - ${KeyPrefix}/${package}
+                    - package: !FindInMap
+                        - Solution
+                        - Package
+                        - ServerlessFixity
+            Layers:
+                - !Ref ResumableHashLayer
+            Environment:
+                Variables:
+                    ENV_SNS_TOPIC_ARN: !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${SNSTopic}
+                    ENV_SOLUTION_ID: !Ref SolutionId
+                    ENV_METRICS_UUID: !Ref MetricsUuid
+                    ENV_ANONYMOUS_USAGE: !Ref AnonymousUsage
+                    ENV_CUSTOM_USER_AGENT: !Ref CustomUserAgent
+
+    StateMachineErrorHandlingEvent:
+        Type: AWS::Events::Rule
+        Properties:
+            Name: !Sub ${SolutionId}-${RootStackName}-statemachine-error
+            Description: !Sub (${SolutionId}-${RootStackName}) Step Functions Execution Status Change Event Rule
+            EventPattern:
+                source:
+                    - aws.states
+                region:
+                    - !Ref AWS::Region
+                detail-type:
+                    - Step Functions Execution Status Change
+                detail:
+                    status:
+                        - FAILED
+                        - ABORTED
+                        - TIMED_OUT
+                    stateMachineArn:
+                        - !Ref ServerlessFixityStateMachine
+            State: ENABLED
+            Targets:
+                -
+                    Id: Id-StateMachineErrorHandling
+                    Arn: !GetAtt OnChecksumError.Arn
+
+    StateMachineErrorHandlingPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            FunctionName: !Ref OnChecksumError
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: !GetAtt StateMachineErrorHandlingEvent.Arn
+
+    ################################################################################
+    #
+    # IAM Role: Vendor policy to assume role. Attach role to:
+    # - CheckRestoreStatusRole
+    # - ComputeChecksumRole
+    # - FinalValidationRole
+    # - OnChecksumErrorRole
+    #
+    ################################################################################
+    VendorCrossAccountPolicy:
+        Type: AWS::IAM::Policy
+        Properties:
+            Roles:
+                - !Ref CheckRestoreStatusRole
+                - !Ref ComputeChecksumRole
+                - !Ref FinalValidationRole
+                - !Ref OnChecksumErrorRole
+            PolicyName: !Sub ${SolutionId}-${RootStackName}-VendorPolicy
+            PolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    # STS - assume vendor role
+                    -
+                        Effect: Allow
+                        Action: sts:AssumeRole
+                        Resource: !If
+                            - bVendorAccountRoleList
+                            - !Split
+                                - ","
+                                - !Ref VendorAccountRoleList
+                            - !Sub arn:aws:iam::${AWS::AccountId}:role/placeholder
 
 Outputs:
     LambdaRoleList:
-        Value: !Join [ ",", [
-            !Ref CheckRestoreStatusRole,
-            !Ref ComputeChecksumRole,
-            !Ref FinalValidationRole,
-            !Ref OnChecksumErrorRole
-        ]]
+        Value: !Join
+            - ","
+            -
+                - !Ref CheckRestoreStatusRole
+                - !Ref ComputeChecksumRole
+                - !Ref FinalValidationRole
+                - !Ref OnChecksumErrorRole
         Description: List of Lambda Roles (State Machine)
-
     ServiceRoleArn:
         Value: !GetAtt StateMachineServiceRole.Arn
         Description: Role Arn (State Machine Service)
-
     CheckRestoreStatus:
         Value: !GetAtt CheckRestoreStatus.Arn
         Description: Lambda Arn (CheckRestoreStatus)
-
     ComputeChecksumArn:
         Value: !GetAtt ComputeChecksum.Arn
         Description: Lambda Arn (ComputeChecksum)
-
     FinalValidationArn:
         Value: !GetAtt FinalValidation.Arn
         Description: Lambda Arn (FinalValidation)
-
     OnChecksumErrorArn:
         Value: !GetAtt OnChecksumError.Arn
         Description: Lambda Arn (OnChecksumError)
-
     StateMachineArn:
         Value: !Ref ServerlessFixityStateMachine
         Description: State Machine Arn
-
     StateMachineName:
         Value: !GetAtt ServerlessFixityStateMachine.Name
         Description: State Machine Name
-
     LambdaFunctionList:
-        Value: !Join [ ",", [
-            !Ref CheckRestoreStatus,
-            !Ref ComputeChecksum,
-            !Ref FinalValidation,
-            !Ref OnChecksumError
-        ]]
+        Value: !Join
+            - ","
+            -
+                - !Ref CheckRestoreStatus
+                - !Ref ComputeChecksum
+                - !Ref FinalValidation
+                - !Ref OnChecksumError
         Description: List of Lambda functions (State Machine)
+    VendorCrossAccountPolicy:
+        Value: !Ref VendorCrossAccountPolicy
+        Description: VendorCrossAccountPolicy
+    ContentBucketList:
+        Value: !Ref ContentBucketList
+        Description: ContentBucketList

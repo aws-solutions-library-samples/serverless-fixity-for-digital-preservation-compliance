@@ -15,7 +15,9 @@ class ChecksumError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1000 - ${this.message || 'checksum error'}`;
+    this.code = this.name;
+    this.statusCode = 1000;
+    this.message = `${this.statusCode} - ${this.message || 'checksum error'}`;
     Error.captureStackTrace(this, ChecksumError);
   }
 }
@@ -28,7 +30,9 @@ class NotImplError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1001 - ${this.message || 'not impl'}`;
+    this.code = this.name;
+    this.statusCode = 1001;
+    this.message = `${this.statusCode} - ${this.message || 'not impl'}`;
     Error.captureStackTrace(this, NotImplError);
   }
 }
@@ -41,7 +45,9 @@ class InvalidArgumentError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1002 - ${this.message || 'invalid argument'}`;
+    this.code = this.name;
+    this.statusCode = 1002;
+    this.message = `${this.statusCode} - ${this.message || 'invalid argument'}`;
     Error.captureStackTrace(this, InvalidArgumentError);
   }
 }
@@ -54,7 +60,9 @@ class ComputedChecksumExistError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1003 - ${this.message || 'MD5 already computed. compute() should not be called again.'}`;
+    this.code = this.name;
+    this.statusCode = 1003;
+    this.message = `${this.statusCode} - ${this.message || 'MD5 already computed. compute() should not be called again.'}`;
     Error.captureStackTrace(this, ComputedChecksumExistError);
   }
 }
@@ -67,7 +75,9 @@ class ChecksumValidationError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1004 - ${this.message || 'checksums do not match'}`;
+    this.code = this.name;
+    this.statusCode = 1004;
+    this.message = `${this.statusCode} - ${this.message || 'checksums do not match'}`;
     Error.captureStackTrace(this, ChecksumValidationError);
   }
 }
@@ -80,7 +90,9 @@ class ConfigurationError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1005 - ${this.message || 'invalid configuration'}`;
+    this.code = this.name;
+    this.statusCode = 1005;
+    this.message = `${this.statusCode} - ${this.message || 'invalid configuration'}`;
     Error.captureStackTrace(this, ConfigurationError);
   }
 }
@@ -93,7 +105,9 @@ class RuntimeError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1006 - ${this.message || 'runtime error'}`;
+    this.code = this.name;
+    this.statusCode = 1006;
+    this.message = `${this.statusCode} - ${this.message || 'runtime error'}`;
     Error.captureStackTrace(this, RuntimeError);
   }
 }
@@ -106,7 +120,9 @@ class MismatchETagError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1007 - ${this.message || 'mismatch ETag error'}`;
+    this.code = this.name;
+    this.statusCode = 1007;
+    this.message = `${this.statusCode} - ${this.message || 'mismatch ETag error'}`;
     Error.captureStackTrace(this, MismatchETagError);
   }
 }
@@ -119,8 +135,25 @@ class MismatchFileSizeError extends Error {
   constructor(...args) {
     super(...args);
     this.name = this.constructor.name;
-    this.message = `1008 - ${this.message || 'mismatch file size error'}`;
+    this.code = this.name;
+    this.statusCode = 1008;
+    this.message = `${this.statusCode} - ${this.message || 'mismatch file size error'}`;
     Error.captureStackTrace(this, MismatchFileSizeError);
+  }
+}
+
+/**
+ * @class ForbiddenError
+ * @description Error code 403
+ */
+class ForbiddenError extends Error {
+  constructor(...args) {
+    super(...args);
+    this.name = this.constructor.name;
+    this.code = this.name;
+    this.statusCode = 403;
+    this.message = `${this.statusCode} - ${this.message || 'Forbidden'}`;
+    Error.captureStackTrace(this, ForbiddenError);
   }
 }
 
@@ -134,4 +167,5 @@ module.exports = {
   RuntimeError,
   MismatchETagError,
   MismatchFileSizeError,
+  ForbiddenError,
 };

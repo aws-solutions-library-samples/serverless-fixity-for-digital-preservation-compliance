@@ -6,14 +6,9 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable no-console */
-/* eslint-disable global-require */
-/* eslint-disable no-unused-vars */
-/* eslint no-unused-expressions: ["error", { "allowShortCircuit": true, "allowTernary": true }] */
-
 const {
   ChecksumError,
+  ForbiddenError,
 } = require('./lib/shared/errors');
 
 /**
@@ -53,7 +48,13 @@ exports.CheckRestoreStatus = async (event, context) => {
     return response;
   } catch (e) {
     console.error(e);
-    throw (e instanceof ChecksumError) ? e : new ChecksumError(e);
+    if (e.statusCode === 403) {
+      throw new ForbiddenError(e);
+    }
+    if (!(e instanceof ChecksumError)) {
+      throw new ChecksumError(e);
+    }
+    throw e;
   }
 };
 
@@ -67,6 +68,12 @@ exports.ComputeChecksum = async (event, context) => {
         } = require('./lib/algorithm/sha1');
         return new SHA1Lib(event);
       }
+      if ((event.Algorithm || '').toLowerCase() === 'sha256') {
+        const {
+          SHA256Lib,
+        } = require('./lib/algorithm/sha256');
+        return new SHA256Lib(event);
+      }
       const {
         MD5Lib,
       } = require('./lib/algorithm/md5');
@@ -78,7 +85,13 @@ exports.ComputeChecksum = async (event, context) => {
     return response;
   } catch (e) {
     console.error(e);
-    throw (e instanceof ChecksumError) ? e : new ChecksumError(e);
+    if (e.statusCode === 403) {
+      throw new ForbiddenError(e);
+    }
+    if (!(e instanceof ChecksumError)) {
+      throw new ChecksumError(e);
+    }
+    throw e;
   }
 };
 
@@ -95,29 +108,23 @@ exports.FinalValidation = async (event, context) => {
     return response;
   } catch (e) {
     console.error(e);
-    throw (e instanceof ChecksumError) ? e : new ChecksumError(e);
+    if (e.statusCode === 403) {
+      throw new ForbiddenError(e);
+    }
+    if (!(e instanceof ChecksumError)) {
+      throw new ChecksumError(e);
+    }
+    throw e;
   }
 };
 
 exports.OnChecksumError = async (event, context) => {
   try {
     console.log(`event = ${JSON.stringify(event, null, 2)}\ncontext = ${JSON.stringify(context, null, 2)}`);
-    const {
-      MySNS,
-    } = require('./lib/sns/index');
+    const StateMachineEvent = require('./lib/state-machine-event');
 
-    let message;
-    try {
-      message = JSON.parse(event.Cause).errorMessage;
-    } catch (e) {
-      message = event;
-    }
-
-    const instance = new MySNS();
-    const subject = 'ERROR: checksum state machine failed';
-    const sent = await instance.send(subject, message);
-    console.log(`${subject} ${sent ? 'SENT' : 'NOT_SENT'}`);
-    return sent;
+    const errorHandler = new StateMachineEvent();
+    return errorHandler.process(event);
   } catch (e) {
     console.error(e);
     throw e;

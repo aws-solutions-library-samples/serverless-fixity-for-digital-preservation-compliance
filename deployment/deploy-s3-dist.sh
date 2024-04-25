@@ -3,6 +3,7 @@
 # include shared configuration file
 source ./common.sh
 ACCOUNTID=
+SOURCE_DIR="../source"
 TEMPLATE_DIST_DIR="global-s3-assets"
 BUID_DIST_DIR="regional-s3-assets"
 
@@ -30,7 +31,7 @@ where
 
   --solution SOLUTION         [optional] if not specified, use 'solution name' from package.json
 
-  --version VERSION           [optional] if not specified, use 'version' field from package.json
+  --version VERSION           [optional] if not specified, use 'version' field from source/.version
 
   --region REGION             [optional] a single region to deploy. If not specified, it deploys to all
                               supported regions. (This assumes all regional buckets already exist.)
@@ -88,7 +89,7 @@ done
   exit 1
 
 [ -z "$VERSION" ] && \
-  VERSION=$(grep_package_version "../source/checksum/package.json")
+  VERSION=$(cat "$SOURCE_DIR/.version")
 
 [ -z "$VERSION" ] && \
   echo "error: VERSION variable is not defined" && \
@@ -116,34 +117,46 @@ ACCOUNTID=$(aws sts get-caller-identity | jq .Account | tr -d \")
 # @description copy solution to regional bucket
 #
 function copy_to_bucket() {
-  local source=$1
-  local bucket=$2
-  local region=$3
+  local bucket=$1
+  # full packages deployed to versioned folder
+  local fullPackages=$BUID_DIST_DIR
+  local versionFolder=s3://${bucket}/${SOLUTION_NAME}/${VERSION}/
+  # main templates deployed to latest folder
+  local mainTemplate=$TEMPLATE_DIST_DIR
+  local latestFolder=s3://${bucket}/${SOLUTION_NAME}/latest/
 
-  # get bucket region and ensure bucket is owned by the same AWS account. LocationConstraint returns null if bucket is in us-east-1 region
+  # Get bucket region and ensure bucket is owned by the same AWS account.
+  # LocationConstraint returns null if bucket is in us-east-1 region
   local location=$(aws s3api get-bucket-location --bucket ${bucket} --expected-bucket-owner ${ACCOUNTID} | jq .LocationConstraint | tr -d \")
   [ -z "$location" ] && \
     echo "Bucket '${bucket}' either doesn't exist or doesn't belong to accountId '${ACCOUNTID}'. exiting..." && \
     exit 1
 
-  echo "uploading package to ${bucket}..."
-  aws s3 cp $source s3://${bucket}/${SOLUTION_NAME}/${VERSION}/ --recursive --acl ${ACL_SETTING} --region ${region}
+  local region="us-east-1"
+  [ "$location" != "null" ] && \
+    region=$location
+
+  # upload artifacts to bucket
+  echo "== Deploy '${SOLUTION_NAME} ($VERSION)' package from '${fullPackages}' to '${versionFolder}' in '${region}' [BEGIN] =="
+
+  if [ "$region" == "us-east-1" ]; then
+    aws s3 cp $fullPackages $versionFolder --recursive --acl ${ACL_SETTING}
+    aws s3 cp $mainTemplate $latestFolder --recursive --acl ${ACL_SETTING}
+  else
+    aws s3 cp $fullPackages $versionFolder --recursive --acl ${ACL_SETTING} --region ${region}
+    aws s3 cp $mainTemplate $latestFolder --recursive --acl ${ACL_SETTING} --region ${region}
+  fi
+  echo "== Deploy '${SOLUTION_NAME} ($VERSION)' package from '${fullPackages}' to '${versionFolder}' in '${region}' [COMPLETED] =="
 }
 
 if [ x"$SINGLE_REGION" != "x" ]; then
   # deploy to a single region
-  echo "'${SOLUTION_NAME} ($VERSION)' package will be deployed to '${BUCKET_NAME}-${SINGLE_REGION}' bucket in ${SINGLE_REGION} region"
-  copy_to_bucket ${TEMPLATE_DIST_DIR} "${BUCKET_NAME}-${SINGLE_REGION}" "${SINGLE_REGION}"
-  copy_to_bucket ${BUID_DIST_DIR} "${BUCKET_NAME}-${SINGLE_REGION}" "${SINGLE_REGION}"
+  copy_to_bucket "${BUCKET_NAME}-${SINGLE_REGION}"
 else
-  echo "'${SOLUTION_NAME} ($VERSION)' package will be deployed to '${BUCKET_NAME}-[region]' buckets: ${REGIONS[*]} regions"
   # special case, deploy to main bucket (without region suffix)
-  copy_to_bucket ${TEMPLATE_DIST_DIR} "${BUCKET_NAME}" "us-east-1"
-  copy_to_bucket ${BUID_DIST_DIR} "${BUCKET_NAME}" "us-east-1"
-
+  copy_to_bucket "${BUCKET_NAME}"
   # now, deploy to regional based buckets
   for region in ${REGIONS[@]}; do
-    copy_to_bucket ${TEMPLATE_DIST_DIR} "${BUCKET_NAME}-${region}" "${region}"
-    copy_to_bucket ${BUID_DIST_DIR} "${BUCKET_NAME}-${region}" "${region}"
+    copy_to_bucket "${BUCKET_NAME}-${region}"
   done
 fi

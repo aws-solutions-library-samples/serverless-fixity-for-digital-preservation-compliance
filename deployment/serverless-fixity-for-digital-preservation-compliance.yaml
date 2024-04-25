@@ -26,11 +26,18 @@ Mappings:
             DisplayName: Fixity
         APIGateway:
             StageName: demo
-    Send:
-        AnonymousUsage:
-            Data: "Yes"
+    AnonymousData:
+        SendAnonymousData:
+            Data: Yes
 
 Parameters:
+    # ContentBucketList
+    ContentBucketList:
+        Type: String
+        Description: a list of bucket names that the solution can access, separated by comma. ie., BucketA,BucketB,BucketC. Using asterisk (*) allows the solution to access all buckets and objects in your AWS Account.
+        AllowedPattern: (^\*$)|([a-z0-9][a-z0-9-]{1,61}[a-z0-9]){1}(,[a-z0-9][a-z0-9-]{1,61}[a-z0-9]){0,}
+        ConstraintDescription: must be either * or a list of valid S3 Bucket name, separated by comma
+        Default: "*"
     # SNS parameter
     Email:
         Type: String
@@ -39,35 +46,53 @@ Parameters:
     # API Gateway parameter
     AllowOrigins:
         Type: String
-        Description: "limit access to specified origin"
+        Description: limit access to specified origin
         Default: "*"
+    # Cross account access
+    VendorAccountRoleList:
+        Type: String
+        Description: a list of IAM roles of different vendor accounts, separated by comma. ie., arn:aws:iam::000000000000:role/AccountARole,arn:aws:iam::111111111111:role/AccountBRole. LEAVE IT BLANK if you don't have any cross account (vendor) roles.
+        AllowedPattern: (^$)|(arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9_+=.@/-]{3,64}){1}(,arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9_+=.@/-]{3,64}){0,}
+        ConstraintDescription: must be either Blank or a list of valid IAM role ARN such as arn:aws:iam::{accountA}:role/RoleA,arn:aws:iam::{accountB}:role/RoleB, separated by comma
 
 Metadata:
     AWS::CloudFormation::Interface:
         ParameterGroups:
             -
                 Label:
-                    default: "SNS Configuration"
+                    default: Amazon S3
+                Parameters:
+                    - ContentBucketList
+            -
+                Label:
+                    default: Amazon Simple Notification Service (SNS)
                 Parameters:
                     - Email
             -
                 Label:
-                    default: "CORS Configuration"
+                    default: CORS Configuration
                 Parameters:
                     - AllowOrigins
+            -
+                Label:
+                    default: Vendor (Cross Account) Configuration
+                Parameters:
+                    - VendorAccountRoleList
         ParameterLabels:
+            ContentBucketList:
+                default: Content Bucket List
             Email:
-                default: "Email address"
+                default: Email address
             AllowOrigins:
-                default: "Access-Control-Allow-Origin"
+                default: Access-Control-Allow-Origin
+            VendorAccountRoleList:
+                default: List of vendor's IAM Roles
 
 Conditions:
-    bEmail: !Not [
-        !Equals [
-            !Ref Email,
-            ""
-        ]
-    ]
+    bEmail: !Not
+        - !Equals
+            - !Ref Email
+            - ""
 
 Resources:
     #####################################################################################
@@ -88,86 +113,42 @@ Resources:
                 Version: "2012-10-17"
                 Statement:
                     -
-                        Effect: "Allow"
-                        Action:
-                            - "sts:AssumeRole"
+                        Effect: Allow
+                        Action: sts:AssumeRole
                         Principal:
                             Service:
-                                - "lambda.amazonaws.com"
+                                - lambda.amazonaws.com
             Path: /
             Policies:
                 -
-                    PolicyName: !Sub [
-                        "${x0}-${AWS::StackName}-custom-resources", {
-                            x0: !FindInMap [
-                                "Solution",
-                                "Project",
-                                "Id"
-                            ]
-                        }
-                    ]
+                    PolicyName: !Sub
+                        - ${solutionId}-${AWS::StackName}-custom-resources
+                        - solutionId: !FindInMap
+                            - Solution
+                            - Project
+                            - Id
                     PolicyDocument:
                         Version: "2012-10-17"
                         Statement:
-                        ## S3
-                        -
-                            Effect: "Allow"
-                            Action:
-                                - "s3:DeleteObject"
-                                - "s3:GetAccelerateConfiguration"
-                                - "s3:GetBucketCORS"
-                                - "s3:GetBucketNotification"
-                                - "s3:GetBucketPolicy"
-                                - "s3:GetBucketTagging"
-                                - "s3:GetEncryptionConfiguration"
-                                - "s3:GetLifecycleConfiguration"                                
-                                - "s3:GetObject"
-                                - "s3:GetObjectAcl"
-                                - "s3:GetObjectTagging"
-                                - "s3:ListBucket"
-                                - "s3:PutAccelerateConfiguration"
-                                - "s3:PutBucketCORS"
-                                - "s3:PutBucketNotification"
-                                - "s3:PutBucketPolicy"
-                                - "s3:PutBucketTagging"
-                                - "s3:PutEncryptionConfiguration"
-                                - "s3:PutLifecycleConfiguration"
-                                - "s3:PutObject"
-                                - "s3:PutObjectAcl"
-                                - "s3:PutObjectTagging"
-                            # This wildcard is present because of circular dependency where
-                            # the buckets aren't known before this custom resource lambda function
-                            # is created.
-                            Resource:
-                                - !Join ["", ["arn:aws:s3:::", "*"]]
-                                - !Join ["", ["arn:aws:s3:::", "*/*"]]
+                            ## CloudWatch Logs
+                            -
+                                Effect: Allow
+                                Action:
+                                    - logs:CreateLogGroup
+                                    - logs:CreateLogStream
+                                    - logs:PutLogEvents
+                                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*
 
-                        ## CloudWatch Logs
-                        -
-                            Effect: "Allow"
-                            Action:
-                                - "logs:CreateLogGroup"
-                                - "logs:CreateLogStream"
-                                - "logs:PutLogEvents"
-                            Resource:
-                                - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
-
-                        ## SNS
-                        -
-                            Effect: "Allow"
-                            Action:
-                                - "sns:GetSubscriptionAttributes"
-                                - "sns:GetTopicAttributes"
-                                - "sns:ListSubscriptionsByTopic"
-                                - "sns:ListTopics"
-                                - "sns:SetSubscriptionAttributes"
-                                - "sns:SetTopicAttributes"
-                                - "sns:Subscribe"
-                                - "sns:Unsubscribe"
-                            # This wildcard is present because the SNS topic is not known
-                            # before this custom resource lambda function is created.
-                            Resource:
-                                - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*"
+                            ## SNS
+                            -
+                                Effect: Allow
+                                Action: sns:Subscribe
+                                Resource: !Sub
+                                    - arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${solutionId}-${AWS::StackName}-serverless-fixity
+                                    - solutionId: !FindInMap
+                                        - Solution
+                                        - Project
+                                        - Id
 
     CustomResourceFunction:
         Metadata:
@@ -181,44 +162,35 @@ Resources:
                         reason: Not using ReservedConcurrentExecutions feature
         Type: AWS::Lambda::Function
         Properties:
-            Description: !Sub [
-                "(${x0}) ${AWS::StackName} custom resources", {
-                    x0: !FindInMap [
-                        "Solution",
-                        "Project",
-                        "Id"
-                    ]
-                }
-            ]
+            Description: !Sub
+                - (${solutionId}) ${AWS::StackName} custom resources
+                - solutionId: !FindInMap
+                    - Solution
+                    - Project
+                    - Id
             Runtime: nodejs14.x
             MemorySize: 128
             Timeout: 300
             Handler: index.Run
             Role: !GetAtt CustomResourceExecutionRole.Arn
             Code:
-                S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Template",
-                            "S3Bucket"
-                        ]
-                    }
-                ]
-                S3Key: !Sub [
-                    "${x0}/${x1}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Template",
-                            "KeyPrefix"
-                        ],
-                        x1: !FindInMap [
-                            "Solution",
-                            "Package",
-                            "CustomResourceX"
-                        ]
-                    }
-                ]
+                S3Bucket: !Sub
+                    - ${bucket}-${AWS::Region}
+                    - bucket: !FindInMap
+                        - Solution
+                        - Template
+                        - S3Bucket
+                S3Key: !Sub
+                    - ${keyprefix}/${package}
+                    -
+                        keyprefix: !FindInMap
+                            - Solution
+                            - Template
+                            - KeyPrefix
+                        package: !FindInMap
+                            - Solution
+                            - Package
+                            - CustomResourceX
 
     #####################################################################################
     #
@@ -237,20 +209,18 @@ Resources:
         Properties:
             ServiceToken: !GetAtt CustomResourceFunction.Arn
             FunctionName: SendConfig
-            SolutionId: !FindInMap [
-                "Solution",
-                "Project",
-                "Id"
-            ]
-            Version: !FindInMap [
-                "Solution",
-                "Project",
-                "Version"
-            ]
+            SolutionId: !FindInMap
+                - Solution
+                - Project
+                - Id
+            Version: !FindInMap
+                - Solution
+                - Project
+                - Version
             MetricsUuid: !GetAtt CreateSolutionUuid.Uuid
             AnonymousUsage: !FindInMap
-                - Send
-                - AnonymousUsage
+                - AnonymousData
+                - SendAnonymousData
                 - Data
 
     #####################################################################################
@@ -261,21 +231,17 @@ Resources:
     SNSTopic:
         Type: AWS::SNS::Topic
         Properties:
-            TopicName: !Sub [
-                "${x0}-${AWS::StackName}-serverless-fixity", {
-                    x0: !FindInMap [
-                        "Solution",
-                        "Project",
-                        "Id"
-                    ]
-                }
-            ]
-            DisplayName: !FindInMap [
-                "Solution",
-                "SNS",
-                "DisplayName"
-            ]
-            KmsMasterKeyId: "alias/aws/sns"
+            TopicName: !Sub
+                - ${solutionId}-${AWS::StackName}-serverless-fixity
+                - solutionId: !FindInMap
+                    - Solution
+                    - Project
+                    - Id
+            DisplayName: !FindInMap
+                - Solution
+                - SNS
+                - DisplayName
+            KmsMasterKeyId: alias/aws/sns
 
     SNSTopicPolicy:
         Type: AWS::SNS::TopicPolicy
@@ -283,23 +249,20 @@ Resources:
             Topics:
                 - !Ref SNSTopic
             PolicyDocument:
-                Id: !Sub [
-                    "${x0}-${AWS::StackName}-sns-policy", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Project",
-                            "Id"
-                        ]
-                    }
-                ]
+                Id: !Sub
+                    - ${solutionId}-${AWS::StackName}-sns-policy
+                    - solutionId: !FindInMap
+                        - Solution
+                        - Project
+                        - Id
                 Version: "2012-10-17"
                 Statement:
                     -
-                        Sid: "allow-lambda-publish"
-                        Effect: "Allow"
+                        Sid: allow-lambda-publish
+                        Effect: Allow
                         Principal:
-                            Service: "lambda.amazonaws.com"
-                        Action: "sns:Publish"
+                            Service: lambda.amazonaws.com
+                        Action: sns:Publish
                         Resource: !Ref SNSTopic
 
     EmailSubscribeFunction:
@@ -320,41 +283,33 @@ Resources:
     StateMachinesStack:
         Type: AWS::CloudFormation::Stack
         Properties:
-            TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/serverless-fixity-for-digital-preservation-compliance-state-machine-stack.template", {
-                    x0: !FindInMap [
-                        "Solution",
-                        "Template",
-                        "S3Bucket"
-                    ],
-                    x1: !FindInMap [
-                        "Solution",
-                        "Template",
-                        "KeyPrefix"
-                    ]
-                }
-            ]
+            TemplateURL: !Sub
+                - https://${bucket}-${AWS::Region}.s3.amazonaws.com/${keyprefix}/serverless-fixity-for-digital-preservation-compliance-state-machine-stack.template
+                -
+                    bucket: !FindInMap
+                        - Solution
+                        - Template
+                        - S3Bucket
+                    keyprefix: !FindInMap
+                        - Solution
+                        - Template
+                        - KeyPrefix
             Parameters:
-                S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Template",
-                            "S3Bucket"
-                        ]
-                    }
-                ]
-                KeyPrefix: !FindInMap [
-                    "Solution",
-                    "Template",
-                    "KeyPrefix"
-                ]
-                SolutionId: !FindInMap [
-                    "Solution",
-                    "Project",
-                    "Id"
-                ]
-                RootStackName: !Ref "AWS::StackName"
+                S3Bucket: !Sub
+                    - ${bucket}-${AWS::Region}
+                    - bucket: !FindInMap
+                        - Solution
+                        - Template
+                        - S3Bucket
+                KeyPrefix: !FindInMap
+                    - Solution
+                    - Template
+                    - KeyPrefix
+                SolutionId: !FindInMap
+                    - Solution
+                    - Project
+                    - Id
+                RootStackName: !Ref AWS::StackName
                 MetricsUuid: !GetAtt CreateSolutionUuid.Uuid
                 SNSTopic: !GetAtt SNSTopic.TopicName
                 CustomUserAgent: !FindInMap
@@ -362,9 +317,15 @@ Resources:
                     - Project
                     - CustomUserAgent
                 AnonymousUsage: !FindInMap
-                    - Send
-                    - AnonymousUsage
+                    - AnonymousData
+                    - SendAnonymousData
                     - Data
+                ContentBucketList: !Join
+                    - "/*,arn:aws:s3:::"
+                    - !Split
+                        - ","
+                        - !Sub arn:aws:s3:::${ContentBucketList}/*
+                VendorAccountRoleList: !Ref VendorAccountRoleList
 
     #####################################################################################
     #
@@ -374,55 +335,43 @@ Resources:
     ApiGatewayStack:
         Type: AWS::CloudFormation::Stack
         Properties:
-            TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/serverless-fixity-for-digital-preservation-compliance-api-stack.template", {
-                    x0: !FindInMap [
-                        "Solution",
-                        "Template",
-                        "S3Bucket"
-                    ],
-                    x1: !FindInMap [
-                        "Solution",
-                        "Template",
-                        "KeyPrefix"
-                    ]
-                }
-            ]
+            TemplateURL: !Sub
+                - https://${bucket}-${AWS::Region}.s3.amazonaws.com/${keyprefix}/serverless-fixity-for-digital-preservation-compliance-api-stack.template
+                -
+                    bucket: !FindInMap
+                        - Solution
+                        - Template
+                        - S3Bucket
+                    keyprefix: !FindInMap
+                        - Solution
+                        - Template
+                        - KeyPrefix
             Parameters:
-                S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Template",
-                            "S3Bucket"
-                        ]
-                    }
-                ]
-                KeyPrefix: !FindInMap [
-                    "Solution",
-                    "Template",
-                    "KeyPrefix"
-                ]
-                SolutionId: !FindInMap [
-                    "Solution",
-                    "Project",
-                    "Id"
-                ]
-                RootStackName: !Ref "AWS::StackName"
-                ApiGatewayEndpointName: !Sub [
-                    "${x0}-${AWS::StackName}-api", {
-                        x0: !FindInMap [
-                            "Solution",
-                            "Project",
-                            "Id"
-                        ]
-                    }
-                ]
-                StageName: !FindInMap [
-                    "Solution",
-                    "APIGateway",
-                    "StageName"
-                ]
+                S3Bucket: !Sub
+                    - ${bucket}-${AWS::Region}
+                    - bucket: !FindInMap
+                        - Solution
+                        - Template
+                        - S3Bucket
+                KeyPrefix: !FindInMap
+                    - Solution
+                    - Template
+                    - KeyPrefix
+                SolutionId: !FindInMap
+                    - Solution
+                    - Project
+                    - Id
+                RootStackName: !Ref AWS::StackName
+                ApiGatewayEndpointName: !Sub
+                    - ${solutionId}-${AWS::StackName}-api
+                    - solutionId: !FindInMap
+                        - Solution
+                        - Project
+                        - Id
+                StageName: !FindInMap
+                        - Solution
+                        - APIGateway
+                        - StageName
                 StateMachine: !GetAtt StateMachinesStack.Outputs.StateMachineName
                 AllowOrigins: !Ref AllowOrigins
                 CustomUserAgent: !FindInMap
@@ -444,12 +393,10 @@ Outputs:
     CustomResourceFunctionArn:
         Value: !GetAtt CustomResourceFunction.Arn
         Description: Lambda Arn (Custom Resource)
-
     ## SNS related
     SNSTopicArn:
         Value: !Ref SNSTopic
         Description: Topic Arn (SNS)
-
     ## State machine related
     StateMachineName:
         Value: !GetAtt StateMachinesStack.Outputs.StateMachineName
@@ -463,7 +410,6 @@ Outputs:
     StateMachineLambdaRoleList:
         Value: !GetAtt StateMachinesStack.Outputs.LambdaRoleList
         Description: List of Lambda Roles (State Machine Lambda)
-
     ## API Gateway related
     ApiId:
         Value: !GetAtt ApiGatewayStack.Outputs.ApiId
@@ -471,3 +417,7 @@ Outputs:
     ApiEndpoint:
         Value: !GetAtt ApiGatewayStack.Outputs.Endpoint
         Description: API Endpoint
+    ## Vendor (cross-account)
+    VendorCrossAccountPolicy:
+        Value: !GetAtt StateMachinesStack.Outputs.VendorCrossAccountPolicy
+        Description: Vendor IAM policy to allow assume specific roles. To add a new vendor, add the new vendor IAM Role to the Resources section of the policy.

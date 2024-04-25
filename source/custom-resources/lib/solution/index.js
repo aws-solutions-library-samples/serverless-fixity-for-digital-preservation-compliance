@@ -6,12 +6,6 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable no-console */
-/* eslint-disable global-require */
-/* eslint-disable no-unused-vars */
-/* eslint-disable arrow-body-style */
-/* eslint-disable import/no-extraneous-dependencies */
 const CRYPTO = require('crypto');
 
 const {

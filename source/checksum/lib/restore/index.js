@@ -7,11 +7,7 @@
  * @author aws-mediaent-solutions
  */
 
-/* eslint-disable import/no-unresolved */
-/* eslint-disable import/no-extraneous-dependencies */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-console */
-const AWS = require('aws-sdk');
+const S3Utils = require('../shared/s3Utils');
 
 const {
   MismatchETagError,
@@ -31,6 +27,8 @@ const DEFAULT_RESTORE_DAYS = 1;
 const DEFAULT_RESTORE_TIER = 'Bulk';
 const KEY_EXPIRY_DATE = 'expiry-date';
 const KEY_ONGOING_REQUEST = 'ongoing-request';
+const CLASS_DEEP_ARCHIVE = 'DEEP_ARCHIVE';
+const CLASS_GLACIER = 'GLACIER';
 
 class S3Restore extends BaseStateData {
   constructor(params = {}) {
@@ -43,12 +41,11 @@ class S3Restore extends BaseStateData {
     this.$storageClass = undefined;
     this.$restoreStatus = undefined;
     this.$restoreExpiredAt = undefined;
-
-    this.$instance = new AWS.S3({
-      apiVersion: '2006-03-01',
-      signatureVersion: 'v4',
-      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
-    });
+    this.$vendorRole = params.VendorRole;
+    this.$vendorExternalId = params.VendorExternalId;
+    this.$s3 = undefined;
+    this.$restoreStartAt = undefined;
+    this.$waitInSeconds = params.WaitInSeconds || 0;
   }
 
   get restoreRequestDays() {
@@ -83,8 +80,36 @@ class S3Restore extends BaseStateData {
     this.$restoreExpiredAt = val;
   }
 
-  get instance() {
-    return this.$instance;
+  get vendorRole() {
+    return this.$vendorRole;
+  }
+
+  get vendorExternalId() {
+    return this.$vendorExternalId;
+  }
+
+  get s3() {
+    return this.$s3;
+  }
+
+  set s3(val) {
+    this.$s3 = val;
+  }
+
+  get restoreStartAt() {
+    return this.$restoreStartAt;
+  }
+
+  set restoreStartAt(val) {
+    this.$restoreStartAt = new Date(val);
+  }
+
+  get waitInSeconds() {
+    return this.$waitInSeconds;
+  }
+
+  set waitInSeconds(val) {
+    this.$waitInSeconds = Number(val);
   }
 
   responseData() {
@@ -96,6 +121,8 @@ class S3Restore extends BaseStateData {
         Days: this.restoreRequestDays,
         Tier: this.restoreRequestTier,
       },
+      RestoreStartAt: this.restoreStartAt,
+      WaitInSeconds: this.waitInSeconds,
     });
     return X.neat(json);
   }
@@ -154,7 +181,8 @@ class S3Restore extends BaseStateData {
       this.restoreRequestTier = 'Standard';
     }
 
-    return this.instance.restoreObject({
+    const s3 = await this.getS3();
+    return s3.restoreObject({
       Bucket: this.bucket,
       Key: this.key,
       RestoreRequest: {
@@ -166,8 +194,43 @@ class S3Restore extends BaseStateData {
     }).promise();
   }
 
+  estimateWaitTime() {
+    let maxWait = 3600;
+    let minWait = 3600;
+
+    if (this.storageClass === CLASS_DEEP_ARCHIVE) {
+      /* case 1.1: Deep Archive & Bulk: Typically within 48 hours */
+      if (this.restoreRequestTier === 'Bulk') {
+        maxWait = 24 * 60 * 60;
+        minWait = 6 * 60 * 60;
+      } else {
+        /* case 1.2: Deep Archive & Standard: Typically within 12 hours */
+        maxWait = 8 * 60 * 60;
+        minWait = 2 * 60 * 60;
+      }
+    } else if (this.storageClass === CLASS_GLACIER) {
+      /* case 2.1: Glacier & Expedited: Typically within 1-5 minutes when less than 250 MB */
+      if (this.restoreRequestTier === 'Expedited') {
+        maxWait = 5 * 60;
+        minWait = 2 * 60;
+      } else if (this.restoreRequestTier === 'Standard') {
+      /* case 2.2: Glacier & Standard: Typically within 3-5 hours */
+        maxWait = 4 * 60 * 60;
+        minWait = 1 * 60 * 60;
+      } else {
+        /* case 2.3: Glacier & Bulk: Typically within 5-12 hours */
+        maxWait = 8 * 60 * 60;
+        minWait = 2 * 60 * 60;
+      }
+    }
+    const sinceStart = Math.floor((Date.now() - new Date(this.restoreStartAt).getTime()) / 1000);
+    const waitInSeconds = Math.max(minWait, (maxWait - sinceStart));
+    return waitInSeconds;
+  }
+
   async checkStatus() {
-    const response = await this.instance.headObject({
+    const s3 = await this.getS3();
+    const response = await s3.headObject({
       Bucket: this.bucket,
       Key: this.key,
     }).promise();
@@ -186,17 +249,33 @@ class S3Restore extends BaseStateData {
       ? new Date(status[KEY_EXPIRY_DATE]).getTime()
       : undefined;
 
-    if (response.StorageClass !== 'GLACIER' && response.StorageClass !== 'DEEP_ARCHIVE') {
+    if (response.StorageClass !== CLASS_GLACIER && response.StorageClass !== CLASS_DEEP_ARCHIVE) {
       this.restoreStatus = 'COMPLETED';
     } else if (status[KEY_ONGOING_REQUEST] === 'false') {
       this.restoreStatus = 'COMPLETED';
-    } else if (!response.Restore) {
-      await this.restore();
-      this.restoreStatus = 'IN_PROGRESS';
     } else {
+      /* start restore process */
+      if (!response.Restore) {
+        await this.restore();
+      }
+      if (!this.restoreStartAt) {
+        this.restoreStartAt = new Date();
+      }
+      this.waitInSeconds = this.estimateWaitTime();
       this.restoreStatus = 'IN_PROGRESS';
     }
     return this.responseData();
+  }
+
+  async getS3() {
+    if (this.s3) {
+      return this.s3;
+    }
+    this.s3 = await S3Utils.createAssumedRoleS3(
+      this.vendorRole,
+      this.vendorExternalId
+    );
+    return this.s3;
   }
 }
 

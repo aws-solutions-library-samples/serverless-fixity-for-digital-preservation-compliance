@@ -6,12 +6,6 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable no-console */
-/* eslint-disable global-require */
-/* eslint-disable no-unused-vars */
-/* eslint-disable arrow-body-style */
-
 const {
   CloudFormationResponse,
 } = require('./lib/shared/cfResponse');

@@ -6,11 +6,9 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable import/no-unresolved */
-/* eslint-disable import/no-extraneous-dependencies */
-const AWS = require('aws-sdk');
 const PATH = require('path');
+
+const S3Utils = require('../shared/s3Utils');
 
 const {
   mxUtils,
@@ -59,6 +57,9 @@ class ChecksumValidation extends BaseStateData {
     this.$comparedResult = 'SKIPPED';
     this.$snsTopicArn = process.env.ENV_SNS_TOPIC_ARN || undefined;
     this.$tagUpdated = false;
+    this.$vendorRole = params.VendorRole;
+    this.$vendorExternalId = params.VendorExternalId;
+    this.$s3 = undefined;
   }
 
   get computed() {
@@ -109,6 +110,22 @@ class ChecksumValidation extends BaseStateData {
     this.$tagUpdated = !!val;
   }
 
+  get vendorRole() {
+    return this.$vendorRole;
+  }
+
+  get vendorExternalId() {
+    return this.$vendorExternalId;
+  }
+
+  get s3() {
+    return this.$s3;
+  }
+
+  set s3(val) {
+    this.$s3 = val;
+  }
+
   responseData() {
     const json = Object.assign({}, super.responseData(), {
       Algorithm: this.algorithm,
@@ -123,18 +140,18 @@ class ChecksumValidation extends BaseStateData {
   }
 
   async getTags() {
-    const s3 = new AWS.S3({
-      apiVersion: '2006-03-01',
-      signatureVersion: 'v4',
-      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
-    });
-
     const params = {
       Bucket: this.bucket,
       Key: this.key,
     };
-    const { TagSet } = await s3.getObjectTagging(params).promise();
-    return TagSet;
+
+    const s3 = await this.getS3();
+    return s3.getObjectTagging(params)
+      .promise()
+      .then((res) =>
+        res.TagSet)
+      .catch(() =>
+        []);
   }
 
   getChecksumTagName() {
@@ -154,35 +171,41 @@ class ChecksumValidation extends BaseStateData {
       Key: this.key,
     };
 
-    const s3 = new AWS.S3({
-      apiVersion: '2006-03-01',
-      signatureVersion: 'v4',
-      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
-    });
-
-    const response = await s3.getObjectTagging(params).promise();
+    const s3 = await this.getS3();
+    const tagSet = await s3.getObjectTagging(params)
+      .promise()
+      .then((res) =>
+        res.TagSet)
+      .catch(() =>
+        []);
 
     /* remove existing checksum and modified tags */
     [
       tagChksum,
       tagModified,
     ].forEach((tag) => {
-      const idx = response.TagSet.findIndex(x => x.Key === tag);
+      const idx = tagSet.findIndex(x => x.Key === tag);
       if (idx >= 0) {
-        response.TagSet.splice(idx, 1);
+        tagSet.splice(idx, 1);
       }
     });
 
     /* only update tags if there is still space to do so */
-    if (response.TagSet.length <= 8) {
+    if (tagSet.length <= 8) {
       params.Tagging = {
-        TagSet: response.TagSet.concat([
+        TagSet: tagSet.concat([
           { Key: tagChksum, Value: this.computed },
           { Key: tagModified, Value: (new Date()).getTime().toString() },
         ]),
       };
-      await s3.putObjectTagging(params).promise();
-      this.tagUpdated = true;
+      this.tagUpdated = await s3.putObjectTagging(params)
+        .promise()
+        .then(() =>
+          true)
+        .catch((e) => {
+          console.error('ERR: createTags:', e);
+          return false;
+        });
     }
   }
 
@@ -203,10 +226,16 @@ class ChecksumValidation extends BaseStateData {
 
   /**
    * @function bestGuessChecksum
-   * @description best effort to extract MD5 or SHA1 checksum
+   * @description best effort to extract MD5, SHA1, SHA256 checksum
    */
   async bestGuessChecksum() {
-    return this.algorithm === 'sha1' ? this.bestGuessSHA1() : this.bestGuessMD5();
+    if (this.algorithm === 'sha1') {
+      return this.bestGuessSHA1();
+    }
+    if (this.algorithm === 'sha256') {
+      return this.bestGuessSHA256();
+    }
+    return this.bestGuessMD5();
   }
 
   /**
@@ -228,11 +257,7 @@ class ChecksumValidation extends BaseStateData {
       Bucket: this.bucket,
       Key: this.key,
     };
-    const s3 = new AWS.S3({
-      apiVersion: '2006-03-01',
-      signatureVersion: 'v4',
-      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
-    });
+    const s3 = await this.getS3();
 
     const {
       ETag,
@@ -277,12 +302,8 @@ class ChecksumValidation extends BaseStateData {
       Bucket: this.bucket,
       Key: this.key,
     };
-    const s3 = new AWS.S3({
-      apiVersion: '2006-03-01',
-      signatureVersion: 'v4',
-      customUserAgent: process.env.ENV_CUSTOM_USER_AGENT,
-    });
 
+    const s3 = await this.getS3();
     const {
       Metadata = {},
     } = await s3.headObject(params).promise();
@@ -291,6 +312,40 @@ class ChecksumValidation extends BaseStateData {
     if (Metadata.sha1) {
       this.comparedWith = 'object-metadata';
       return Metadata.sha1;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * @function bestGuessSHA256
+   * @description best effort to extract SHA256 from
+   *   - x-amz-meta-sha256 metadata field
+   *   - x-computed-sha256 tag
+   */
+  async bestGuessSHA256() {
+    /* try tag first */
+    const chksum = this.tags.find((x) =>
+      x.Key === this.getChecksumTagName());
+    if (chksum && chksum.Value.match(/^([0-9a-fA-F]{64})$/)) {
+      this.comparedWith = 'object-tagging';
+      return chksum.Value;
+    }
+
+    const params = {
+      Bucket: this.bucket,
+      Key: this.key,
+    };
+
+    const s3 = await this.getS3();
+    const {
+      Metadata = {},
+    } = await s3.headObject(params).promise();
+
+    /* try x-amz-meta-sha256 metadata */
+    if (Metadata.sha256) {
+      this.comparedWith = 'object-metadata';
+      return Metadata.sha256;
     }
 
     return undefined;
@@ -344,6 +399,17 @@ class ChecksumValidation extends BaseStateData {
     ]);
 
     return this.responseData();
+  }
+
+  async getS3() {
+    if (this.s3) {
+      return this.s3;
+    }
+    this.s3 = await S3Utils.createAssumedRoleS3(
+      this.vendorRole,
+      this.vendorExternalId
+    );
+    return this.s3;
   }
 }
 

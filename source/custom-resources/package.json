@@ -16,5 +16,7 @@
   "author": "aws-mediaent-solutions",
   "license": "MIT-0",
   "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "aws-sdk": "^2.1237.0"
+  }
 }

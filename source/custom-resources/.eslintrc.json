@@ -19,7 +19,10 @@
     "arrow-parens": 0,
     "max-classes-per-file": 0,
     "implicit-arrow-linebreak": 0,
-    "prefer-object-spread": 0
+    "prefer-object-spread": 0,
+    "import/no-extraneous-dependencies": 0,
+    "no-console": 0,
+    "global-require": 0
   },
   "env": {
     "es6": true,

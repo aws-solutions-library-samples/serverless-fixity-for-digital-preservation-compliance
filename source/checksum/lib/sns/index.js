@@ -6,9 +6,6 @@
 /**
  * @author aws-mediaent-solutions
  */
-
-/* eslint-disable import/no-unresolved */
-/* eslint-disable import/no-extraneous-dependencies */
 const AWS = require('aws-sdk');
 
 const {

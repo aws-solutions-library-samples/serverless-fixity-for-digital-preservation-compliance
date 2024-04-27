@@ -8,7 +8,7 @@
     * [Quick create stack](#quick-create-stack)
 * [Building and customizing the solution](#building-and-customizing-the-solution)
     * [Prerequisite](#prerequisite)
-        * [NodeJS 14.x](#nodejs-14x)
+        * [NodeJS 20.x](#nodejs-20x)
         * [AWS CLI](#aws-cli)
         * [JQ](#jq)
         * [Docker](#docker)
@@ -75,16 +75,16 @@ The solution can also be used to compute checksum of an object from cross accoun
 
 ## Prebuilt AWS CloudFormation templates
 
-_Version: 1.3.0_
+_Version: 1.4.0_
 
 The solution is deployed using an AWS CloudFormation template with AWS Lambda backed custom resources. To deploy the solution, use one of the following CloudFormation templates and follows the instructions.
 
-| AWS Region | AWS CloudFormation Template URL |
-|:-----------|:----------------------------|
-| EU (Ireland) |<a href="https://console.aws.amazon.com/cloudformation/home?region=eu-west-1#stacks/create/review?stackName=fixity&templateURL=https://mediaent-solution-eu-west-1.s3.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template" target="_blank">Launch stack</a> |
-| US East (N. Virginia) |<a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-1#stacks/create/review?stackName=fixity&templateURL=https://mediaent-solution-us-east-1.s3.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template" target="_blank">Launch stack</a> |
-| US East (Ohio) |<a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-2#stacks/create/review?stackName=fixity&templateURL=https://mediaent-solution-us-east-2.s3.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template" target="_blank">Launch stack</a> |
-| US West (Oregon) |<a href="https://console.aws.amazon.com/cloudformation/home?region=us-west-2#stacks/create/review?stackName=fixity&templateURL=https://mediaent-solution-us-west-2.s3.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template" target="_blank">Launch stack</a> |
+|Region|1-click Quick Deploy|Template URL|
+|:--|:--|:--|
+|US East (N. Virginia)|<a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks/quickcreate?templateURL=https://awsi-megs-guidances-us-east-1.s3.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template&stackName=serverless-fixity" target="_blank">Launch stack</a>|https://awsi-megs-guidances-us-east-1.s3.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template|
+|US East (Ohio)  |<a href="https://console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateURL=https://awsi-megs-guidances-us-east-2.s3.us-east-2.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template&stackName=serverless-fixity" target="_blank">Launch stack</a>|https://awsi-megs-guidances-us-east-2.s3.us-east-2.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template|
+|US West (Oregon)|<a href="https://console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://awsi-megs-guidances-us-west-2.s3.us-west-2.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template&stackName=serverless-fixity" target="_blank">Launch stack</a>|https://awsi-megs-guidances-us-west-2.s3.us-west-2.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template|
+|Europe (Ireland)|<a href="https://console.aws.amazon.com/cloudformation/home?region=eu-west-1#/stacks/quickcreate?templateURL=https://awsi-megs-guidances-eu-west-1.s3.eu-west-1.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template&stackName=serverless-fixity" target="_blank">Launch stack</a>|https://awsi-megs-guidances-eu-west-1.s3.eu-west-1.amazonaws.com/serverless-fixity-for-digital-preservation-compliance/latest/serverless-fixity-for-digital-preservation-compliance.template|
 
 
 ### Quick create stack
@@ -114,7 +114,7 @@ __
 
 To build the solution locally, you would need the followings:
 
-#### NodeJS 14.x
+#### NodeJS 20.x
 
 For MAC user, download and install from [nodejs.org](https://nodejs.org/en/download/). Alternatively, you can also use Homebrew.
 

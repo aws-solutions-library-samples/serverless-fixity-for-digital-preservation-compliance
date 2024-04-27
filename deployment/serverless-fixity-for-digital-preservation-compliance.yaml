@@ -26,9 +26,14 @@ Mappings:
             DisplayName: Fixity
         APIGateway:
             StageName: demo
+        Layer:
+            AwsSdk: "%%LAYER_AWSSDK%%"
     AnonymousData:
         SendAnonymousData:
             Data: Yes
+    Node:
+        Runtime:
+            Version: nodejs20.x
 
 Parameters:
     # ContentBucketList
@@ -95,6 +100,52 @@ Conditions:
             - ""
 
 Resources:
+    ################################################################################
+    #
+    # Amazon Lambda Layers
+    # * AWS SDK
+    #
+    ################################################################################
+    AwsSdkLayer:
+        Type: AWS::Lambda::LayerVersion
+        Properties:
+            LayerName: !Sub
+                - "${solutionId}-${AWS::StackName}-layer-aws-sdk"
+                - solutionId: !FindInMap
+                    - Solution
+                    - Project
+                    - Id
+            CompatibleRuntimes:
+                - !FindInMap
+                    - Node
+                    - Runtime
+                    - Version
+            Content:
+                S3Bucket: !Sub
+                    - ${bucket}-${AWS::Region}
+                    - bucket: !FindInMap
+                        - Solution
+                        - Template
+                        - S3Bucket
+                S3Key: !Sub
+                    - ${keyprefix}/${package}
+                    -
+                        keyprefix: !FindInMap
+                            - Solution
+                            - Template
+                            - KeyPrefix
+                        package: !FindInMap
+                            - Solution
+                            - Layer
+                            - AwsSdk
+            Description: !Sub
+                - (${solutionId}) ${AWS::StackName} aws-sdk layer
+                - solutionId: !FindInMap
+                    - Solution
+                    - Project
+                    - Id
+            LicenseInfo: MIT-0
+
     #####################################################################################
     #
     # Custom Resource - helper function to create custom resource
@@ -168,7 +219,10 @@ Resources:
                     - Solution
                     - Project
                     - Id
-            Runtime: nodejs14.x
+            Runtime: !FindInMap
+                - Node
+                - Runtime
+                - Version
             MemorySize: 128
             Timeout: 300
             Handler: index.Run
@@ -191,6 +245,8 @@ Resources:
                             - Solution
                             - Package
                             - CustomResourceX
+            Layers:
+                - !Ref AwsSdkLayer
 
     #####################################################################################
     #
@@ -326,6 +382,7 @@ Resources:
                         - ","
                         - !Sub arn:aws:s3:::${ContentBucketList}/*
                 VendorAccountRoleList: !Ref VendorAccountRoleList
+                AwsSdkLayer: !Ref AwsSdkLayer
 
     #####################################################################################
     #
@@ -378,6 +435,7 @@ Resources:
                     - Solution
                     - Project
                     - CustomUserAgent
+                AwsSdkLayer: !Ref AwsSdkLayer
 
 Outputs:
     CustomUserAgent:

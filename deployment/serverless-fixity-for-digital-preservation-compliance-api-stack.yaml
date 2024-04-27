@@ -25,6 +25,9 @@ Mappings:
         # https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-cloudwatch-logs/
         APIGateway:
             CreateCloudWatchRole: true
+    Node:
+        Runtime:
+            Version: nodejs20.x
 
 Parameters:
     SolutionId:
@@ -57,6 +60,9 @@ Parameters:
     CustomUserAgent:
         Type: String
         Description: Solution User Agent
+    AwsSdkLayer:
+        Type: String
+        Description: AwsSdkLayer
 
 Conditions:
     bCreateCloudWatchRole: !Equals
@@ -125,7 +131,10 @@ Resources:
         Properties:
             FunctionName: !Sub ${SolutionId}-${RootStackName}-OnRequest
             Description: !Sub (${SolutionId}) Handle POST, OPTION requests
-            Runtime: nodejs14.x
+            Runtime: !FindInMap
+                - Node
+                - Runtime
+                - Version
             MemorySize: 128
             Timeout: 300
             Handler: !FindInMap
@@ -141,6 +150,8 @@ Resources:
                         - Solution
                         - Package
                         - ServerlessFixity
+            Layers:
+                - !Ref AwsSdkLayer
             Environment:
                 Variables:
                     ENV_STATE_MACHINE_NAME: !Ref StateMachine

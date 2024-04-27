@@ -20,6 +20,9 @@ Mappings:
             ComputeChecksum:  index.ComputeChecksum
             FinalValidation:  index.FinalValidation
             OnChecksumError:  index.OnChecksumError
+    Node:
+        Runtime:
+            Version: nodejs20.x
 
 Parameters:
     S3Bucket:
@@ -57,6 +60,9 @@ Parameters:
         Type: String
         Description: VendorAccountRoleList
         AllowedPattern: (^$)|(arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9_+=.@/-]{3,64}){1}(,arn:aws:iam::[0-9]{12}:role/[a-zA-Z0-9_+=.@/-]{3,64}){0,}
+    AwsSdkLayer:
+        Type: String
+        Description: AwsSdkLayer
 
 Conditions:
     bVendorAccountRoleList: !Not
@@ -78,7 +84,10 @@ Resources:
             CompatibleArchitectures:
                 - x86_64
             CompatibleRuntimes:
-                - nodejs14.x
+                - !FindInMap
+                    - Node
+                    - Runtime
+                    - Version
             Content:
                 S3Bucket: !Ref S3Bucket
                 S3Key: !Sub
@@ -152,7 +161,10 @@ Resources:
         Properties:
             FunctionName: !Sub ${SolutionId}-${RootStackName}-CheckRestoreStatus
             Description: !Sub (${SolutionId}) Check object restore status
-            Runtime: nodejs14.x
+            Runtime: !FindInMap
+                - Node
+                - Runtime
+                - Version
             MemorySize: 128
             Timeout: 900
             Handler: !FindInMap
@@ -169,6 +181,7 @@ Resources:
                         - Package
                         - ServerlessFixity
             Layers:
+                - !Ref AwsSdkLayer
                 - !Ref ResumableHashLayer
             Environment:
                 Variables:
@@ -238,7 +251,10 @@ Resources:
         Properties:
             FunctionName: !Sub ${SolutionId}-${RootStackName}-ComputeChecksum
             Description: !Sub (${SolutionId}) Compute MD5 checksum incrementally
-            Runtime: nodejs14.x
+            Runtime: !FindInMap
+                - Node
+                - Runtime
+                - Version
             MemorySize: 2048
             Timeout: 900
             Handler: !FindInMap
@@ -255,6 +271,7 @@ Resources:
                         - Package
                         - ServerlessFixity
             Layers:
+                - !Ref AwsSdkLayer
                 - !Ref ResumableHashLayer
             Environment:
                 Variables:
@@ -334,7 +351,10 @@ Resources:
         Properties:
             FunctionName: !Sub ${SolutionId}-${RootStackName}-FinalValidation
             Description: !Sub (${SolutionId}) Validate MD5 checksum against a known one on the S3 object
-            Runtime: nodejs14.x
+            Runtime: !FindInMap
+                - Node
+                - Runtime
+                - Version
             MemorySize: 128
             Timeout: 300
             Handler: !FindInMap
@@ -351,6 +371,7 @@ Resources:
                         - Package
                         - ServerlessFixity
             Layers:
+                - !Ref AwsSdkLayer
                 - !Ref ResumableHashLayer
             Environment:
                 Variables:
@@ -548,7 +569,10 @@ Resources:
         Properties:
             FunctionName: !Sub ${SolutionId}-${RootStackName}-OnChecksumError
             Description: !Sub (${SolutionId}) Manage checksum error from state machine. Send SNS notification
-            Runtime: nodejs14.x
+            Runtime: !FindInMap
+                - Node
+                - Runtime
+                - Version
             MemorySize: 128
             Timeout: 300
             Handler: !FindInMap
@@ -565,6 +589,7 @@ Resources:
                         - Package
                         - ServerlessFixity
             Layers:
+                - !Ref AwsSdkLayer
                 - !Ref ResumableHashLayer
             Environment:
                 Variables:

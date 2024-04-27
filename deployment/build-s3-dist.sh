@@ -91,6 +91,7 @@ TMP_DIR=$(mktemp -d)
   exit 1
 
 # Lambda layers
+LAYER_AWSSDK=
 LAYER_RESUMABLE_HASH=
 
 # Lambda packages
@@ -175,7 +176,10 @@ function build_cloudformation_templates() {
   local keyprefix="${SOLUTION_NAME}/${VERSION}"
   echo "Updating %%KEYPREFIX%% param in cloudformation templates..."
   sed -i'.bak' -e "s|%%KEYPREFIX%%|${keyprefix}|g" *.yaml || exit 1
-  # lambda layer
+  # aws-sdk lambda layer
+  echo "Updating %%LAYER_AWSSDK%% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%%LAYER_AWSSDK%%|${LAYER_AWSSDK}|g" *.yaml || exit 1
+  # resumable lambda layer
   echo "Updating %%LAYER_RESUMABLE_HASH%% param in cloudformation templates..."
   sed -i'.bak' -e "s|%%LAYER_RESUMABLE_HASH%%|${LAYER_RESUMABLE_HASH}|g" *.yaml || exit 1
   # package name
@@ -234,6 +238,23 @@ function build_custom_resources_package() {
 }
 
 #
+# aws-sdk lambda layer
+#
+function build_awssdk_layer() {
+  echo "------------------------------------------------------------------------------"
+  echo "Building aws-sdk layer package"
+  echo "------------------------------------------------------------------------------"
+  local package="aws-sdk-layer"
+  LAYER_AWSSDK="${package}-${VERSION}.zip"
+  pushd "$SOURCE_DIR/layers/${package}"
+  npm install
+  npm run build
+  npm run zip -- "$LAYER_AWSSDK" .
+  cp -v "./dist/${LAYER_AWSSDK}" "$BUILD_DIST_DIR"
+  popd
+}
+
+#
 # Resumable-Hash lambda layer
 #
 function build_resumable_hash_layer() {
@@ -278,6 +299,7 @@ function on_complete() {
   echo "** VERSION=${VERSION} **"
   echo ""
   echo "== Lambda Layer(s) =="
+  echo "** LAYER_AWSSDK=${LAYER_AWSSDK} **"
   echo "** LAYER_RESUMABLE_HASH=${LAYER_RESUMABLE_HASH} **"
   echo ""
   echo "== Lambda Package(s) =="
@@ -290,6 +312,7 @@ function on_complete() {
 #
 clean_start
 install_dev_dependencies
+build_awssdk_layer
 build_resumable_hash_layer
 build_serverless_checksum_package
 build_custom_resources_package

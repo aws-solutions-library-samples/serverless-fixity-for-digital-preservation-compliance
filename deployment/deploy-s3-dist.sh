@@ -6,6 +6,7 @@ ACCOUNTID=
 SOURCE_DIR="../source"
 TEMPLATE_DIST_DIR="global-s3-assets"
 BUID_DIST_DIR="regional-s3-assets"
+MAIN_TEMPLATE="serverless-fixity-for-digital-preservation-compliance.template"
 
 #
 # @function usage
@@ -136,20 +137,42 @@ function copy_to_bucket() {
   [ "$location" != "null" ] && \
     region=$location
 
+  local domain="s3.amazonaws.com"
+  local optionalFlag="--acl ${ACL_SETTING}"
+
+  if [ "$region" != "us-east-1" ]; then
+    domain=s3.${region}.amazonaws.com
+    optionalFlag="${optionalFlag} --region ${region}"
+  fi
+
   # upload artifacts to bucket
   echo "== Deploy '${SOLUTION_NAME} ($VERSION)' package from '${fullPackages}' to '${versionFolder}' in '${region}' [BEGIN] =="
-
-  if [ "$region" == "us-east-1" ]; then
-    aws s3 cp $fullPackages $versionFolder --recursive --acl ${ACL_SETTING}
-    aws s3 cp $mainTemplate $latestFolder --recursive --acl ${ACL_SETTING}
-  else
-    aws s3 cp $fullPackages $versionFolder --recursive --acl ${ACL_SETTING} --region ${region}
-    aws s3 cp $mainTemplate $latestFolder --recursive --acl ${ACL_SETTING} --region ${region}
-  fi
+  aws s3 cp $fullPackages $versionFolder --recursive $optionalFlag
+  aws s3 cp $mainTemplate $latestFolder --recursive $optionalFlag
   echo "== Deploy '${SOLUTION_NAME} ($VERSION)' package from '${fullPackages}' to '${versionFolder}' in '${region}' [COMPLETED] =="
+
+  local url="https://${bucket}.${domain}/${SOLUTION_NAME}/${VERSION}/${MAIN_TEMPLATE}"
+  local latestUrl="https://${bucket}.${domain}/${SOLUTION_NAME}/latest/${MAIN_TEMPLATE}"
+
+  echo "== (VERSIONED URL) ============================"
+  echo ""
+  echo "HTTPS URL:"
+  echo "$url"
+  echo ""
+  echo "One-click URL to create stack:"
+  echo "https://console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/quickcreate?templateURL=${url}&stackName=serverless-fixity"
+  echo ""
+
+  echo "== (LATEST URL) ==============================="
+  echo ""
+  echo "$latestUrl"
+  echo ""
+  echo "One-click URL to create stack:"
+  echo "https://console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/quickcreate?templateURL=${latestUrl}&stackName=serverless-fixity"
+  echo ""
 }
 
-if [ x"$SINGLE_REGION" != "x" ]; then
+if [ "x$SINGLE_REGION" != "x" ]; then
   # deploy to a single region
   copy_to_bucket "${BUCKET_NAME}-${SINGLE_REGION}"
 else
